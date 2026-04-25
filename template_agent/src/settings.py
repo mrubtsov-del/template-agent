@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     )
 
     # MCP Server Configuration
+    MCP_ENABLED: bool = Field(
+        default=False,
+        json_schema_extra={
+            "env": "MCP_ENABLED",
+            "description": "Enable integration with MCP server for tool execution",
+        },
+    )
     MCP_SERVER_NAME: str = Field(
         default="template-mcp-server",
         json_schema_extra={"env": "MCP_SERVER_NAME"},
