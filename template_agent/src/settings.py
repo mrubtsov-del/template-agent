@@ -121,6 +121,56 @@ class Settings(BaseSettings):
         },
     )
 
+    # Snowflake Configuration
+    SNOWFLAKE_ACCOUNT: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_ACCOUNT"}
+    )
+    SNOWFLAKE_USER: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_USER"}
+    )
+    SNOWFLAKE_PASSWORD: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_PASSWORD"}
+    )
+    SNOWFLAKE_ROLE: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_ROLE"}
+    )
+    SNOWFLAKE_PRIVATE_KEY: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_PRIVATE_KEY"}
+    )
+    SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"}
+    )
+    SNOWFLAKE_WAREHOUSE: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_WAREHOUSE"}
+    )
+    SNOWFLAKE_DATABASE: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_DATABASE"}
+    )
+    SNOWFLAKE_SCHEMA: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_SCHEMA"}
+    )
+    SNOWFLAKE_ALLOWED_TABLES: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "SNOWFLAKE_ALLOWED_TABLES",
+            "description": "Comma-separated list of allowed Snowflake tables for querying",
+        },
+    )
+    SNOWFLAKE_QUERY_TIMEOUT: int = Field(
+        default=60,
+        json_schema_extra={
+            "env": "SNOWFLAKE_QUERY_TIMEOUT",
+            "description": "Query timeout in seconds for Snowflake connections",
+        },
+    )
+    SNOWFLAKE_MAX_ROWS: int = Field(
+        default=1000,
+        json_schema_extra={
+            "env": "SNOWFLAKE_MAX_ROWS",
+            "description": "Maximum number of rows to fetch from Snowflake queries",
+        },
+    )
+
     # Request Logging Configuration
     REQUEST_LOGGING_ENABLED: bool = Field(
         default=True,
