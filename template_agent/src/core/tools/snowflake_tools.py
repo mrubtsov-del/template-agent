@@ -14,6 +14,8 @@ from typing import Any, Iterator
 import snowflake.connector
 from langchain_core.tools import tool
 from snowflake.connector import DictCursor
+from sqlglot import exp, parse
+from sqlglot.errors import ParseError
 
 from template_agent.src.core.exceptions.exceptions import (
     AppException,
@@ -26,6 +28,16 @@ logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
 
 
 _READ_ONLY_PREFIXES = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE"}
+_DISALLOWED_AST_NODES: tuple[type[exp.Expression], ...] = (
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Merge,
+    exp.Drop,
+    exp.Create,
+    exp.Alter,
+    exp.TruncateTable,
+)
 
 
 def _build_connect_kwargs() -> dict[str, Any]:
@@ -190,16 +202,70 @@ def describe_table(table_name: str, schema_name: str | None = None) -> dict[str,
         return {"error": f"Snowflake error: {exc.msg or str(exc)}"}
 
 
-def _is_read_only(sql: str) -> bool:
-    """Coarse read-only check used in MVP.
+def _parse_allowed_tables() -> set[str]:
+    """Parse comma-separated allowed tables from settings."""
+    if not settings.SNOWFLAKE_ALLOWED_TABLES:
+        return set()
+    return {
+        table.strip().upper()
+        for table in settings.SNOWFLAKE_ALLOWED_TABLES.split(",")
+        if table.strip()
+    }
 
-    A stricter AST-based check using ``sqlglot`` is introduced on Day 4.
-    """
+
+def _is_read_only(sql: str) -> tuple[bool, str | None]:
+    """Validate query as read-only using AST checks when possible."""
     cleaned = sql.strip().rstrip(";").lstrip("(")
     if not cleaned:
-        return False
+        return False, "SQL query is empty."
     first = cleaned.split(None, 1)[0].upper()
-    return first in _READ_ONLY_PREFIXES
+    if first not in _READ_ONLY_PREFIXES:
+        return (
+            False,
+            (
+                "Only read-only queries are allowed (SELECT, WITH, SHOW, DESC, "
+                "DESCRIBE). The submitted statement was rejected."
+            ),
+        )
+
+    # SHOW/DESC are Snowflake commands and are not always fully represented by sqlglot.
+    if first in {"SHOW", "DESC", "DESCRIBE"}:
+        if ";" in cleaned:
+            return False, "Multiple statements are not allowed."
+        return True, None
+
+    try:
+        parsed = parse(cleaned, read="snowflake")
+    except ParseError as exc:
+        return False, f"Invalid SQL syntax: {exc}"
+
+    if len(parsed) != 1:
+        return False, "Multiple statements are not allowed."
+
+    statement = parsed[0]
+    if not isinstance(statement, exp.Select):
+        return False, "Only SELECT-like statements are allowed."
+
+    for node_type in _DISALLOWED_AST_NODES:
+        if any(statement.find_all(node_type)):
+            return False, f"Disallowed SQL operation detected: {node_type.__name__}"
+
+    allowed_tables = _parse_allowed_tables()
+    if allowed_tables:
+        referenced_tables = {
+            table.name.upper() for table in statement.find_all(exp.Table) if table.name
+        }
+        disallowed = sorted(referenced_tables - allowed_tables)
+        if disallowed:
+            return (
+                False,
+                (
+                    "Query references tables outside SNOWFLAKE_ALLOWED_TABLES: "
+                    f"{', '.join(disallowed)}"
+                ),
+            )
+
+    return True, None
 
 
 @tool
@@ -216,13 +282,9 @@ def run_select_query(sql: str) -> dict[str, Any]:
         Dict with ``columns``, ``rows`` (list of lists), ``row_count`` and a
         ``truncated`` flag. On rejection or failure, returns ``{"error": ...}``.
     """
-    if not _is_read_only(sql):
-        return {
-            "error": (
-                "Only read-only queries are allowed (SELECT, WITH, SHOW, "
-                "DESC, DESCRIBE). The submitted statement was rejected."
-            )
-        }
+    is_valid, error_message = _is_read_only(sql)
+    if not is_valid:
+        return {"error": error_message}
 
     cleaned = sql.strip().rstrip(";")
     logger.info("snowflake.run_select_query sql=%s", cleaned[:500])
