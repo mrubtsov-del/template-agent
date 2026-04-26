@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     SNOWFLAKE_USER: Optional[str] = Field(
         default=None, json_schema_extra={"env": "SNOWFLAKE_USER"}
     )
+    SNOWFLAKE_USER_TEST: Optional[str] = Field(
+        default=None, json_schema_extra={"env": "SNOWFLAKE_USER_TEST"}
+    )
     SNOWFLAKE_PASSWORD: Optional[str] = Field(
         default=None, json_schema_extra={"env": "SNOWFLAKE_PASSWORD"}
     )
@@ -177,6 +180,11 @@ class Settings(BaseSettings):
             "description": "Maximum number of rows to fetch from Snowflake queries",
         },
     )
+
+    @property
+    def snowflake_user_effective(self) -> Optional[str]:
+        """Return Snowflake username with backward-compatible fallback order."""
+        return self.SNOWFLAKE_USER_TEST or self.SNOWFLAKE_USER
 
     # Request Logging Configuration
     REQUEST_LOGGING_ENABLED: bool = Field(

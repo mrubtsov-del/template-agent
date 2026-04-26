@@ -39,15 +39,16 @@ def _build_connect_kwargs() -> dict[str, Any]:
             "SNOWFLAKE_ACCOUNT is not configured",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
-    if not settings.SNOWFLAKE_USER:
+    effective_user = settings.snowflake_user_effective
+    if not effective_user:
         raise AppException(
-            "SNOWFLAKE_USER is not configured",
+            "Snowflake user is not configured. Set SNOWFLAKE_USER_TEST or SNOWFLAKE_USER",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
 
     kwargs: dict[str, Any] = {
         "account": settings.SNOWFLAKE_ACCOUNT,
-        "user": settings.SNOWFLAKE_USER,
+        "user": effective_user,
         "client_session_keep_alive": True,
         "network_timeout": settings.SNOWFLAKE_QUERY_TIMEOUT,
         "login_timeout": 30,
