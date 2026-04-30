@@ -45,6 +45,11 @@ spec:
                 configMapKeyRef:
                   name: template-agent-config
                   key: LANGFUSE_TRACING_ENVIRONMENT
+            - name: MCP_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: MCP_ENABLED
             - name: MCP_SERVER_NAME
               valueFrom:
                 configMapKeyRef:
@@ -60,6 +65,26 @@ spec:
                 configMapKeyRef:
                   name: template-agent-config
                   key: MCP_TRANSPORT_PROTOCOL
+            - name: MCP_CONNECTION_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: MCP_CONNECTION_TIMEOUT
+            - name: MCP_SSL_VERIFY
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: MCP_SSL_VERIFY
+            - name: SNOWFLAKE_QUERY_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: SNOWFLAKE_QUERY_TIMEOUT
+            - name: SNOWFLAKE_MAX_ROWS
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: SNOWFLAKE_MAX_ROWS
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:

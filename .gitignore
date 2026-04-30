@@ -187,3 +187,7 @@ uv.lock
 bandit-report.json
 safety-report.json
 .safety-project.ini
+
+# Local deployment helpers with sensitive data
+snowflake-bot-secret.yaml
+request_*.json

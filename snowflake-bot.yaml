@@ -1,0 +1,51 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: snowflake-bot
+    app.kubernetes.io/component: agent
+  name: snowflake-bot
+  namespace: rhu-platforms--pipeline
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: "10"
+        autoscaling.knative.dev/targetUtilizationPercentage: "70"
+        autoscaling.knative.dev/window: 60s
+      labels:
+        app.kubernetes.io/name: snowflake-bot
+        app.kubernetes.io/component: agent
+    spec:
+      containerConcurrency: 0
+      containers:
+      - image: image-registry.openshift-image-registry.svc:5000/rhu-platforms--pipeline/snowflake-bot:latest
+        imagePullPolicy: Always
+        name: snowflake-bot
+        envFrom:
+          - configMapRef:
+              name: snowflake-bot-config
+          - secretRef:
+              name: snowflake-bot-secrets
+        ports:
+        - containerPort: 8081
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      enableServiceLinks: false
+      timeoutSeconds: 300
+  traffic:
+  - latestRevision: true
+    percent: 100

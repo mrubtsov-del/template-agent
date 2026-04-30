@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowflake-bot-config
+data:
+  AGENT_HOST: "0.0.0.0"
+  AGENT_PORT: "8081"
+  PYTHON_LOG_LEVEL: "INFO"
+  USE_INMEMORY_SAVER: "true"
+  MCP_ENABLED: "false"
+  SNOWFLAKE_QUERY_TIMEOUT: "60"
+  SNOWFLAKE_MAX_ROWS: "1000"
+  LANGFUSE_TRACING_ENVIRONMENT: "production"

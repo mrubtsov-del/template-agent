@@ -21,4 +21,4 @@ async def health_check() -> JSONResponse:
     Returns:
         A JSONResponse containing the service status and name.
     """
-    return JSONResponse(content={"status": "healthy", "service": "Template Agent"})
+    return JSONResponse(content={"status": "healthy", "service": "Snowflake Agent"})
