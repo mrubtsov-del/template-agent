@@ -9,6 +9,7 @@ LangChain ``@tool`` callables and can be passed directly to ``create_react_agent
 from __future__ import annotations
 
 from contextlib import contextmanager
+from time import perf_counter
 from typing import Any, Iterator
 
 import snowflake.connector
@@ -38,6 +39,20 @@ _DISALLOWED_AST_NODES: tuple[type[exp.Expression], ...] = (
     exp.Alter,
     exp.TruncateTable,
 )
+
+
+def _tool_error(
+    message: str, error_type: str, retryable: bool, details: str | None = None
+) -> dict[str, Any]:
+    """Return normalized tool error payload."""
+    payload: dict[str, Any] = {
+        "error": message,
+        "error_type": error_type,
+        "retryable": retryable,
+    }
+    if details:
+        payload["details"] = details
+    return payload
 
 
 def _build_connect_kwargs() -> dict[str, Any]:
@@ -156,16 +171,36 @@ def list_tables(schema_name: str | None = None) -> dict[str, Any]:
         Dict with the schema queried and a list of table names.
     """
     target = _qualify(schema_name)
-    logger.info("snowflake.list_tables target=%s", target)
+    started_at = perf_counter()
+    logger.info("snowflake.list_tables.start target=%s", target)
     try:
         with _snowflake_cursor() as cur:
             cur.execute(f"SHOW TABLES IN SCHEMA {target}")
             rows = cur.fetchall()
         names = [r.get("name") for r in rows if r.get("name")]
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "snowflake.list_tables.done target=%s row_count=%s duration_ms=%s status=ok",
+            target,
+            len(names),
+            duration_ms,
+        )
         return {"schema": target, "tables": names, "count": len(names)}
     except snowflake.connector.Error as exc:
-        logger.error("snowflake.list_tables failed: %s", exc)
-        return {"error": f"Snowflake error: {exc.msg or str(exc)}"}
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        details = exc.msg or str(exc)
+        logger.error(
+            "snowflake.list_tables.done target=%s duration_ms=%s status=error details=%s",
+            target,
+            duration_ms,
+            details,
+        )
+        return _tool_error(
+            message=f"Snowflake error: {details}",
+            error_type="snowflake_error",
+            retryable=False,
+            details=details,
+        )
 
 
 @tool
@@ -182,7 +217,8 @@ def describe_table(table_name: str, schema_name: str | None = None) -> dict[str,
     """
     target = _qualify(schema_name)
     fqn = f"{target}.{table_name}"
-    logger.info("snowflake.describe_table fqn=%s", fqn)
+    started_at = perf_counter()
+    logger.info("snowflake.describe_table.start fqn=%s", fqn)
     try:
         with _snowflake_cursor() as cur:
             cur.execute(f"DESC TABLE {fqn}")
@@ -196,10 +232,29 @@ def describe_table(table_name: str, schema_name: str | None = None) -> dict[str,
             }
             for r in rows
         ]
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "snowflake.describe_table.done fqn=%s row_count=%s duration_ms=%s status=ok",
+            fqn,
+            len(columns),
+            duration_ms,
+        )
         return {"table": fqn, "columns": columns, "column_count": len(columns)}
     except snowflake.connector.Error as exc:
-        logger.error("snowflake.describe_table failed: %s", exc)
-        return {"error": f"Snowflake error: {exc.msg or str(exc)}"}
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        details = exc.msg or str(exc)
+        logger.error(
+            "snowflake.describe_table.done fqn=%s duration_ms=%s status=error details=%s",
+            fqn,
+            duration_ms,
+            details,
+        )
+        return _tool_error(
+            message=f"Snowflake error: {details}",
+            error_type="snowflake_error",
+            retryable=False,
+            details=details,
+        )
 
 
 def _parse_allowed_tables() -> set[str]:
@@ -284,10 +339,16 @@ def run_select_query(sql: str) -> dict[str, Any]:
     """
     is_valid, error_message = _is_read_only(sql)
     if not is_valid:
-        return {"error": error_message}
+        return _tool_error(
+            message=error_message or "SQL validation failed.",
+            error_type="validation_error",
+            retryable=False,
+        )
 
     cleaned = sql.strip().rstrip(";")
-    logger.info("snowflake.run_select_query sql=%s", cleaned[:500])
+    started_at = perf_counter()
+    sql_preview = cleaned[:500]
+    logger.info("snowflake.run_select_query.start sql_preview=%s", sql_preview)
     try:
         with _snowflake_cursor() as cur:
             cur.execute(cleaned)
@@ -296,6 +357,13 @@ def run_select_query(sql: str) -> dict[str, Any]:
         # DictCursor returns dicts; normalise to rows-of-lists for stable JSON.
         normalised = [[r.get(c) for c in columns] for r in rows]
         truncated = len(normalised) == settings.SNOWFLAKE_MAX_ROWS
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "snowflake.run_select_query.done row_count=%s truncated=%s duration_ms=%s status=ok",
+            len(normalised),
+            truncated,
+            duration_ms,
+        )
         return {
             "columns": columns,
             "rows": normalised,
@@ -303,8 +371,19 @@ def run_select_query(sql: str) -> dict[str, Any]:
             "truncated": truncated,
         }
     except snowflake.connector.Error as exc:
-        logger.error("snowflake.run_select_query failed: %s", exc)
-        return {"error": f"Snowflake error: {exc.msg or str(exc)}"}
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        details = exc.msg or str(exc)
+        logger.error(
+            "snowflake.run_select_query.done duration_ms=%s status=error details=%s",
+            duration_ms,
+            details,
+        )
+        return _tool_error(
+            message=f"Snowflake error: {details}",
+            error_type="snowflake_error",
+            retryable=False,
+            details=details,
+        )
 
 
 SNOWFLAKE_TOOLS = [list_tables, describe_table, run_select_query]

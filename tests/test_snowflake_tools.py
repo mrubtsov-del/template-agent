@@ -88,6 +88,8 @@ def test_run_select_query_rejects_write():
     result = snowflake_tools.run_select_query.invoke({"sql": "DELETE FROM CUSTOMERS"})
     assert "error" in result
     assert "Only read-only queries are allowed" in result["error"]
+    assert result["error_type"] == "validation_error"
+    assert result["retryable"] is False
 
 
 def test_run_select_query_success(monkeypatch):
@@ -100,3 +102,18 @@ def test_run_select_query_success(monkeypatch):
     assert result["rows"] == [[1, "A"], [2, "B"]]
     assert result["row_count"] == 2
     assert result["truncated"] is False
+
+
+def test_tool_error_helper_shape():
+    payload = snowflake_tools._tool_error(
+        message="bad request",
+        error_type="validation_error",
+        retryable=False,
+        details="details",
+    )
+    assert payload == {
+        "error": "bad request",
+        "error_type": "validation_error",
+        "retryable": False,
+        "details": "details",
+    }
