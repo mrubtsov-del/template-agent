@@ -1,0 +1,22 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: snowflake-bot
+  namespace: rhu-platforms--pipeline
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: snowflake-bot
+  namespace: rhu-platforms--pipeline
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: snowflake-bot:latest

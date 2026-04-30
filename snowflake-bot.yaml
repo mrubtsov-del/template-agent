@@ -13,6 +13,7 @@ spec:
         autoscaling.knative.dev/target: "10"
         autoscaling.knative.dev/targetUtilizationPercentage: "70"
         autoscaling.knative.dev/window: 60s
+        snowflake-bot.dev/revision: "2"
       labels:
         app.kubernetes.io/name: snowflake-bot
         app.kubernetes.io/component: agent

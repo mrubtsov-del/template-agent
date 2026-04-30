@@ -13,6 +13,7 @@ WORKDIR /app
 USER root
 COPY pyproject.toml /app/pyproject.toml
 RUN pip install uv
+ENV UV_HTTP_TIMEOUT=180
 RUN uv venv
 RUN source /app/.venv/bin/activate
 RUN uv pip install -r pyproject.toml
