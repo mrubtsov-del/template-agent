@@ -10,7 +10,13 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 
 
+def _health_payload() -> dict[str, str]:
+    """Return a stable health payload used by all health routes."""
+    return {"status": "healthy", "service": "Snowflake Agent"}
+
+
 @router.get("/health")
+@router.get("/v1/shadowbot-agent/health")
 async def health_check() -> JSONResponse:
     """Perform a health check on the template agent service.
 
@@ -21,4 +27,4 @@ async def health_check() -> JSONResponse:
     Returns:
         A JSONResponse containing the service status and name.
     """
-    return JSONResponse(content={"status": "healthy", "service": "Snowflake Agent"})
+    return JSONResponse(content=_health_payload())
