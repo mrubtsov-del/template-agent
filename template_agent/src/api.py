@@ -25,6 +25,14 @@ from template_agent.src.routes.threads import router as threads_router
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
+from template_agent.vendor.shadowbot_agent_api import (
+    chat_handler,
+    stream_chat_handler,
+    get_conversations_handler,
+    get_messages_handler,
+    feedback_handler,
+)
+
 logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
 
 
