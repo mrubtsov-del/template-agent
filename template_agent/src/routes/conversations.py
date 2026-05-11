@@ -23,5 +23,9 @@ from template_agent.src.routes.common import logger
 @require_auth
 async def handle_get_conversations(user: UserContext) -> List[Conversation]:
     """Return the user's conversations (stub: empty list)."""
-    logger.info("shadowbot.conversations.list", user=user.email or user.sub)
+    logger.warning(
+        "[V1] DUMMY IMPLEMENTATION - List conversations returns empty list. "
+        "Wire up persistence to enable history.",
+        user_id=user.email or user.sub,
+    )
     return []

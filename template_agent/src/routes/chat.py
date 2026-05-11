@@ -36,7 +36,7 @@ async def handle_chat_request(
     user_id = resolve_user_id(request, user)
 
     logger.info(
-        "shadowbot.chat.start",
+        "[V1] Chat called",
         conversation_id=conv_id,
         user_id=user_id,
     )
@@ -60,7 +60,7 @@ async def handle_chat_request(
                 final_text = content["content"]
 
         logger.info(
-            "shadowbot.chat.done",
+            "[V1] Chat completed",
             conversation_id=conv_id,
             chars=len(final_text),
         )
@@ -76,8 +76,9 @@ async def handle_chat_request(
         )
     except Exception as exc:
         logger.error(
-            "shadowbot.chat.error",
+            "[V1] Chat failed",
             conversation_id=conv_id,
+            user_id=user_id,
             error=str(exc),
             exc_info=True,
         )

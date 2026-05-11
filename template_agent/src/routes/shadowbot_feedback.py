@@ -27,12 +27,12 @@ async def handle_feedback(
 ) -> FeedbackResponse:
     """Persist (currently: log) user feedback on a message."""
     logger.info(
-        "shadowbot.feedback",
+        "[V1] Feedback received",
         conversation_id=conversation_id,
         message_id=message_id,
         option=request.option,
-        comment=request.comment,
-        user=user.email or user.sub,
+        has_comment=bool(request.comment),
+        user_id=user.email or user.sub,
     )
     return FeedbackResponse(
         conversationID=conversation_id,

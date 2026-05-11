@@ -17,7 +17,9 @@ from starlette.responses import JSONResponse
 
 from shadowbot_agent_api import (
     chat_api_router as shadowbot_chat_router,
+    chat_api_router_v2 as shadowbot_chat_router_v2,
     configure_auth,
+    register_exception_handlers as register_shadowbot_exception_handlers,
     setup_auth_from_env,
 )
 
@@ -30,15 +32,24 @@ from template_agent.src.routes.shadowbot_health import router as shadowbot_healt
 from template_agent.src.routes.stream import router as stream_router
 from template_agent.src.routes.threads import router as threads_router
 
-# Importing these modules executes the @*_handler() decorators which register
-# the Shadowbot V1 business logic in the shadowbot_agent_api handler registry.
-# They MUST be imported before app.include_router(shadowbot_chat_router) below.
+# Importing these modules executes the @*_handler[_v2]() decorators which
+# register Shadowbot business logic in the shadowbot_agent_api handler registry.
+# They MUST be imported before the include_router calls below.
 from template_agent.src.routes import (  # noqa: F401
+    # V1 handlers
     chat,
     conversations,
     messages,
     shadowbot_feedback,
     shadowbot_stream,
+    # V2 handlers
+    chat_v2,
+    conversations_v2,
+    data_sources_v2,
+    feedback_categories_v2,
+    messages_v2,
+    shadowbot_feedback_v2,
+    shadowbot_stream_v2,
 )
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
@@ -197,9 +208,20 @@ app.include_router(history_router)
 app.include_router(threads_router)
 
 # Shadowbot V1 contract: /api/v1/conversations/{chat,chat/stream,...}
-# Business-logic handlers are registered via decorators in the shadowbot_*
-# modules imported above; this router provides the FastAPI routes themselves.
+# Business-logic handlers are registered via decorators in the V1 modules
+# imported above; this router provides the FastAPI routes themselves.
 app.include_router(shadowbot_chat_router)
+
+# Shadowbot V2 contract: /api/v2/conversations/{chat,chat/stream,...,feedback/categories,data/sources}
+# Handlers registered via @chat_handler_v2(), @stream_chat_handler_v2(), etc.
+app.include_router(shadowbot_chat_router_v2)
+
+# Map vendor's AgentException (and subclasses like AuthenticationException)
+# to proper structured JSON responses with status code + error_code. Must
+# be called AFTER our own @app.exception_handler(Exception) below — FastAPI
+# resolves handlers by most-specific class, so AgentException always wins
+# over the bare Exception fallback.
+register_shadowbot_exception_handlers(app)
 
 
 @app.exception_handler(Exception)

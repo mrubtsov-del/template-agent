@@ -43,7 +43,7 @@ async def handle_stream_chat(
     user_identifier = user.email or user.sub or user.preferred_username
 
     logger.info(
-        "shadowbot.stream.start",
+        "[V1] Stream called",
         conversation_id=conv_id,
         user_id=user_identifier,
     )
@@ -85,8 +85,9 @@ async def handle_stream_chat(
                     yield StreamChunk(type="token", contentType="ai", text=text)
     except Exception as exc:
         logger.error(
-            "shadowbot.stream.error",
+            "[V1] Stream failed",
             conversation_id=conv_id,
+            user_id=user_identifier,
             error=str(exc),
             exc_info=True,
         )
@@ -104,7 +105,8 @@ async def handle_stream_chat(
     )
 
     logger.info(
-        "shadowbot.stream.done",
+        "[V1] Stream completed",
         conversation_id=conv_id,
+        message_id=msg_id,
         chars=len(full_text),
     )

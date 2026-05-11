@@ -25,9 +25,10 @@ async def handle_get_messages(
     conversation_id: str, user: UserContext
 ) -> List[ConversationMessage]:
     """Return messages for a conversation (stub: empty list)."""
-    logger.info(
-        "shadowbot.messages.list",
+    logger.warning(
+        "[V1] DUMMY IMPLEMENTATION - Get messages returns empty list. "
+        "Wire up persistence to enable message history.",
         conversation_id=conversation_id,
-        user=user.email or user.sub,
+        user_id=user.email or user.sub,
     )
     return []
