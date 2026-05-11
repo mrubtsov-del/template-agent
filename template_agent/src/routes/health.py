@@ -12,11 +12,10 @@ router = APIRouter()
 
 def _health_payload() -> dict[str, str]:
     """Return a stable health payload used by all health routes."""
-    return {"status": "healthy", "service": "Snowflake Agent"}
+    return {"status": "healthy", "service": "Snowflake Agent", "version": "1.0.0"}
 
 
 @router.get("/health")
-@router.get("/v1/shadowbot-agent/health")
 async def health_check() -> JSONResponse:
     """Perform a health check on the template agent service.
 

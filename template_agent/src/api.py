@@ -15,23 +15,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from shadowbot_agent_api import (
+    chat_api_router as shadowbot_chat_router,
+    configure_auth,
+    setup_auth_from_env,
+)
+
 from template_agent.src.core.agent import initialize_database
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
 from template_agent.src.routes.feedback import router as feedback_router
 from template_agent.src.routes.health import router as health_router
 from template_agent.src.routes.history import router as history_router
+from template_agent.src.routes.shadowbot_health import router as shadowbot_health_router
 from template_agent.src.routes.stream import router as stream_router
 from template_agent.src.routes.threads import router as threads_router
+
+# Importing these modules executes the @*_handler() decorators which register
+# the Shadowbot V1 business logic in the shadowbot_agent_api handler registry.
+# They MUST be imported before app.include_router(shadowbot_chat_router) below.
+from template_agent.src.routes import (  # noqa: F401
+    chat,
+    conversations,
+    messages,
+    shadowbot_feedback,
+    shadowbot_stream,
+)
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
-from template_agent.vendor.shadowbot_agent_api import (
-    chat_handler,
-    stream_chat_handler,
-    get_conversations_handler,
-    get_messages_handler,
-    feedback_handler,
-)
 
 logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
 
@@ -138,6 +149,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.critical(f"Failed to initialize database on startup: {e}")
         raise
 
+    # Configure Shadowbot authentication from environment variables
+    # (AUTH_ENABLED, AUTH_ISSUER, AUTH_AUDIENCE, AUTH_JWKS_URL).
+    # If AUTH_ENABLED=false the call is a no-op and @require_auth will 401.
+    auth_config = setup_auth_from_env()
+    if auth_config:
+        configure_auth(auth_config)
+        logger.info(
+            f"Shadowbot auth ENABLED (issuer={auth_config.issuer}, "
+            f"audience={auth_config.audience})"
+        )
+    else:
+        logger.warning(
+            "Shadowbot auth DISABLED - @require_auth endpoints will return 401. "
+            "Set AUTH_ENABLED=true + AUTH_ISSUER/AUDIENCE/JWKS_URL to enable."
+        )
+
     logger.info("Agent server ready - MCP connection will be established per-request")
     yield
     logger.info("Agent server shutting down")
@@ -163,10 +190,16 @@ app.logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
 
 # Register all route handlers
 app.include_router(health_router)
+app.include_router(shadowbot_health_router)
 app.include_router(stream_router)
 app.include_router(feedback_router)
 app.include_router(history_router)
 app.include_router(threads_router)
+
+# Shadowbot V1 contract: /api/v1/conversations/{chat,chat/stream,...}
+# Business-logic handlers are registered via decorators in the shadowbot_*
+# modules imported above; this router provides the FastAPI routes themselves.
+app.include_router(shadowbot_chat_router)
 
 
 @app.exception_handler(Exception)
