@@ -16,6 +16,7 @@ from template_agent.src.core.exceptions.exceptions import AppException, AppExcep
 from template_agent.src.core.prompt import get_system_prompt
 from template_agent.src.core.storage import get_global_checkpoint
 from template_agent.src.core.tools.snowflake_tools import SNOWFLAKE_TOOLS
+from template_agent.src.db.shadowbot_storage import get_shadowbot_storage
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
