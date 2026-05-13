@@ -85,6 +85,41 @@ spec:
                 configMapKeyRef:
                   name: template-agent-config
                   key: SNOWFLAKE_MAX_ROWS
+            - name: AUTH_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_ENABLED
+            - name: AUTH_AUDIENCE
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_AUDIENCE
+            - name: AUTH_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_ISSUER
+            - name: AUTH_JWKS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_JWKS_URL
+            - name: AUTH_ALGORITHMS
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_ALGORITHMS
+            - name: AUTH_VERIFY_EXP
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_VERIFY_EXP
+            - name: AUTH_VERIFY_AUD
+              valueFrom:
+                configMapKeyRef:
+                  name: template-agent-config
+                  key: AUTH_VERIFY_AUD
             - name: POSTGRES_HOST
               valueFrom:
                 secretKeyRef:
