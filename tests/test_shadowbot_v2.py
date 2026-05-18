@@ -32,6 +32,7 @@ from template_agent.src.routes import (  # noqa: F401
     chat_v2 as v2_chat,
     conversations_v2 as v2_conversations,
     data_sources_v2 as v2_data_sources,
+    delete_conversation_v2 as v2_delete,
     feedback_categories_v2 as v2_feedback_categories,
     messages_v2 as v2_messages,
     shadowbot_feedback_v2 as v2_feedback,
@@ -132,6 +133,7 @@ class TestV2ChatHandler:
             v2_feedback.handle_feedback_v2,
             v2_feedback_categories.handle_get_feedback_categories_v2,
             v2_data_sources.handle_get_data_sources_v2,
+            v2_delete.handle_delete_conversation_v2,
         )
         for handler in handlers:
             assert "custom_auth" in inspect.signature(handler).parameters
@@ -279,6 +281,34 @@ class TestV2FeedbackCategories:
         assert by_code["missing_content"].comment_required is False
 
 
+class TestV2DeleteConversation:
+    @pytest.mark.asyncio
+    async def test_delete_returns_deleted_status(self, monkeypatch):
+        from template_agent.src import settings as settings_mod
+        from template_agent.src.core import storage
+
+        monkeypatch.setattr(settings_mod.settings, "USE_INMEMORY_SAVER", True)
+        storage.register_thread("dev@example.com", "conv-del-1")
+
+        user = UserContext(sub="u-1", email="dev@example.com")
+        resp = await v2_delete.handle_delete_conversation_v2(
+            "conv-del-1",
+            user=user,
+        )
+        assert resp.conversation_id == "conv-del-1"
+        assert resp.status == "deleted"
+        assert resp.modifier_details["deleted_by"] == "dev@example.com"
+        assert resp.modifier_details["registry_removed"] is True
+        assert "conv-del-1" not in storage.get_user_threads("dev@example.com")
+
+    def test_delete_endpoint_via_router(self):
+        r = _make_v2_client().delete("/api/v2/conversations/conv-xyz")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "deleted"
+        assert data["conversation_id"] == "conv-xyz"
+
+
 class TestV2DataSources:
     @pytest.mark.asyncio
     async def test_lists_snowflake_as_live_collection(self):
@@ -390,5 +420,11 @@ class TestV2AuthGating:
     def test_data_sources_returns_401(self):
         r = _make_v2_client(authed=False).get(
             "/api/v2/conversations/data/sources"
+        )
+        assert r.status_code == 401
+
+    def test_delete_returns_401(self):
+        r = _make_v2_client(authed=False).delete(
+            "/api/v2/conversations/conv-x"
         )
         assert r.status_code == 401

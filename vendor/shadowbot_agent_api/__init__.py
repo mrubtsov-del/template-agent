@@ -14,6 +14,7 @@ from .core import (
     feedback_handler_v2,
     get_data_sources_handler_v2,
     get_feedback_categories_handler_v2,
+    delete_conversation_handler_v2,
     # Auth decorators (work with both V1 and V2)
     with_auth,
     require_auth
@@ -41,6 +42,7 @@ from .models_v2 import (
     DataCollection, DataSourcesResponseV2,
     # Feedback categories models
     FeedbackCategoryItem, FeedbackCategoriesResponseV2,
+    DeleteConversationResponseV2,
 )
 # Import and expose auth utilities
 from .auth import configure_auth, setup_auth_from_env, get_custom_auth_headers
@@ -94,6 +96,7 @@ __all__ = [
     "feedback_handler_v2",
     "get_data_sources_handler_v2",
     "get_feedback_categories_handler_v2",
+    "delete_conversation_handler_v2",
     # Auth decorators (work with both V1 and V2)
     "with_auth",
     "require_auth",
@@ -114,6 +117,7 @@ __all__ = [
     "DataCollection", "DataSourcesResponseV2",
     # Feedback categories models
     "FeedbackCategoryItem", "FeedbackCategoriesResponseV2",
+    "DeleteConversationResponseV2",
     # Auth models (used by both V1 and V2)
     "AuthConfig", "UserContext",
     # Auth utilities

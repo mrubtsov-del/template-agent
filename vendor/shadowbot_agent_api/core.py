@@ -11,7 +11,8 @@ from .models_v2 import (
     # V2 models
     ConversationRequestV2, ChatMessageV2, MessageHistoryResponseV2,
     FeedbackRequestV2, FeedbackResponseV2, ConversationListResponseV2,
-    StreamEventV2, DataSourcesResponseV2, FeedbackCategoriesResponseV2
+    StreamEventV2, DataSourcesResponseV2, FeedbackCategoriesResponseV2,
+    DeleteConversationResponseV2,
 )
 
 logger = get_python_logger(Constants.PYTHON_LOG_LEVEL)
@@ -480,6 +481,31 @@ def get_data_sources_handler_v2() -> Callable[
     def decorator(func: Callable[[], Coroutine[Any, Any, DataSourcesResponseV2]]) -> Callable[
         [], Coroutine[Any, Any, DataSourcesResponseV2]]:
         _register_handler("get_data_sources_v2", func)
+        return func
+
+    return decorator
+
+
+def delete_conversation_handler_v2() -> Callable[
+    [Callable[[str], Coroutine[Any, Any, DeleteConversationResponseV2]]],
+    Callable[[str], Coroutine[Any, Any, DeleteConversationResponseV2]],
+]:
+    """
+    Decorator for the V2 delete conversation API
+    (``DELETE /api/v2/conversations/{conversation_id}``).
+
+    The decorated function must accept ``conversation_id`` as the first argument
+    and return ``DeleteConversationResponseV2``. It must be an async function.
+
+    Optional parameters (injected by the API router when present in the signature):
+    - user: Optional[UserContext]
+    - custom_auth: CustomAuthHeaders
+    """
+
+    def decorator(
+        func: Callable[[str], Coroutine[Any, Any, DeleteConversationResponseV2]],
+    ) -> Callable[[str], Coroutine[Any, Any, DeleteConversationResponseV2]]:
+        _register_handler("delete_conversation_v2", func)
         return func
 
     return decorator

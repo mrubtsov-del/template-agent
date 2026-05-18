@@ -51,6 +51,23 @@ def register_thread(user_id: str, thread_id: str) -> None:
     logger.info(f"Registered thread {thread_id} for user {user_id}")
 
 
+def unregister_thread(user_id: str, thread_id: str) -> bool:
+    """Remove a thread from the in-memory registry.
+
+    Returns:
+        True if the thread was registered and removed, False if it was unknown.
+    """
+    global _thread_registry
+    user_threads = _thread_registry.get(user_id)
+    if not user_threads or thread_id not in user_threads:
+        return False
+    user_threads.discard(thread_id)
+    if not user_threads:
+        _thread_registry.pop(user_id, None)
+    logger.info(f"Unregistered thread {thread_id} for user {user_id}")
+    return True
+
+
 def get_user_threads(user_id: str) -> list[str]:
     """Get all threads for a user.
 

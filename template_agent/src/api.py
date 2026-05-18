@@ -46,6 +46,7 @@ from template_agent.src.routes import (  # noqa: F401
     chat_v2,
     conversations_v2,
     data_sources_v2,
+    delete_conversation_v2,
     feedback_categories_v2,
     messages_v2,
     shadowbot_feedback_v2,
