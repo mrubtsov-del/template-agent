@@ -186,6 +186,45 @@ class Settings(BaseSettings):
         """Return Snowflake username with backward-compatible fallback order."""
         return self.SNOWFLAKE_USER_TEST or self.SNOWFLAKE_USER
 
+    # Shadowbot JWT (vendor reads AUTH_* at runtime via configure_auth)
+    AUTH_ENABLED: bool = Field(
+        default=False,
+        json_schema_extra={
+            "env": "AUTH_ENABLED",
+            "description": "Enable JWT validation for @require_auth Shadowbot endpoints",
+        },
+    )
+    AUTH_ISSUER: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "AUTH_ISSUER",
+            "description": "JWT issuer (e.g. https://auth.redhat.com/auth/realms/EmployeeIDP)",
+        },
+    )
+    AUTH_AUDIENCE: Optional[str] = Field(
+        default=None,
+        json_schema_extra={"env": "AUTH_AUDIENCE", "description": "JWT audience (e.g. account)"},
+    )
+    AUTH_JWKS_URL: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "AUTH_JWKS_URL",
+            "description": "JWKS URL for the same realm as AUTH_ISSUER",
+        },
+    )
+    AUTH_ALGORITHMS: str = Field(
+        default="RS256",
+        json_schema_extra={"env": "AUTH_ALGORITHMS"},
+    )
+    AUTH_VERIFY_EXP: bool = Field(
+        default=True,
+        json_schema_extra={"env": "AUTH_VERIFY_EXP"},
+    )
+    AUTH_VERIFY_AUD: bool = Field(
+        default=True,
+        json_schema_extra={"env": "AUTH_VERIFY_AUD"},
+    )
+
     # Request Logging Configuration
     REQUEST_LOGGING_ENABLED: bool = Field(
         default=True,

@@ -65,7 +65,10 @@ async def handle_stream_chat_v2(
         user_id=user_email,
     )
 
-    manager = AgentManager()
+    manager = AgentManager(
+        custom_auth=custom_auth,
+        snowflake_login=user_email if user_email != "anonymous" else None,
+    )
     stream_req = StreamRequest(
         message=request_body.message,
         thread_id=conv_id,

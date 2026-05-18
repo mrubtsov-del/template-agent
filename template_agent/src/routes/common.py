@@ -7,6 +7,7 @@ endpoint module stays minimal and focused on its own route.
 from typing import Optional
 
 from shadowbot_agent_api import ConversationRequest, UserContext
+from shadowbot_agent_api.models import CustomAuthHeaders
 
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
@@ -26,3 +27,15 @@ def resolve_user_id(
     if request.userInfo and request.userInfo.userEmail:
         return request.userInfo.userEmail
     return "anonymous"
+
+
+def resolve_snowflake_request_token(
+    custom_auth: Optional[CustomAuthHeaders],
+) -> Optional[str]:
+    """Return trimmed ``X-Authorization-Snowflake`` value if present."""
+    if not custom_auth:
+        return None
+    raw = custom_auth.get("Snowflake")
+    if not raw or not str(raw).strip():
+        return None
+    return str(raw).strip()

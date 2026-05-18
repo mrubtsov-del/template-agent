@@ -3,7 +3,9 @@
 from contextlib import contextmanager
 
 import pytest
+from shadowbot_agent_api.models import CustomAuthHeaders
 
+from template_agent.src.core.exceptions.exceptions import AppException
 from template_agent.src.core.tools import snowflake_tools
 
 
@@ -102,6 +104,45 @@ def test_run_select_query_success(monkeypatch):
     assert result["rows"] == [[1, "A"], [2, "B"]]
     assert result["row_count"] == 2
     assert result["truncated"] is False
+
+
+def test_build_connect_kwargs_oauth_from_header_scope(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    auth = CustomAuthHeaders(auth_tokens={"Snowflake": "opaque-or-jwt-token"})
+    with snowflake_tools.snowflake_request_auth_scope(auth, "analyst@example.com"):
+        kwargs = snowflake_tools._build_connect_kwargs()
+    assert kwargs["authenticator"] == "oauth"
+    assert kwargs["token"] == "opaque-or-jwt-token"
+    assert kwargs["user"] == "analyst@example.com"
+    assert kwargs["account"] == "xy12345"
+    assert "password" not in kwargs
+    assert "private_key" not in kwargs
+
+
+def test_build_connect_kwargs_oauth_requires_login(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    auth = CustomAuthHeaders(auth_tokens={"Snowflake": "token-only"})
+    with pytest.raises(AppException) as excinfo:
+        with snowflake_tools.snowflake_request_auth_scope(auth, None):
+            snowflake_tools._build_connect_kwargs()
+    assert "login" in str(excinfo.value).lower() or "user" in str(excinfo.value).lower()
+
+
+def test_build_connect_kwargs_env_password_when_no_request_token(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PASSWORD", "secret")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PRIVATE_KEY", None)
+    with snowflake_tools.snowflake_request_auth_scope(None, None):
+        kwargs = snowflake_tools._build_connect_kwargs()
+    assert kwargs.get("authenticator") != "oauth"
+    assert kwargs["password"] == "secret"
+    assert kwargs["user"] == "svc_user"
 
 
 def test_tool_error_helper_shape():

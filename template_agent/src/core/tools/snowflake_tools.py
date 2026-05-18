@@ -8,9 +8,10 @@ LangChain ``@tool`` callables and can be passed directly to ``create_react_agent
 
 from __future__ import annotations
 
+import contextvars
 from contextlib import contextmanager
 from time import perf_counter
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 import snowflake.connector
 from langchain_core.tools import tool
@@ -18,14 +19,44 @@ from snowflake.connector import DictCursor
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
+from shadowbot_agent_api.models import CustomAuthHeaders
+
 from template_agent.src.core.exceptions.exceptions import (
     AppException,
     AppExceptionCode,
 )
+from template_agent.src.routes.common import resolve_snowflake_request_token
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
 
 logger = get_python_logger(settings.PYTHON_LOG_LEVEL)
+
+# Per-request Snowflake credentials from Shadowbot ``X-Authorization-Snowflake``
+# (wired by ``AgentManager`` around each agent run).
+_snowflake_request_ctx: contextvars.ContextVar[
+    tuple[Optional[CustomAuthHeaders], Optional[str]]
+] = contextvars.ContextVar(
+    "snowflake_request_auth",
+    default=(None, None),
+)
+
+
+@contextmanager
+def snowflake_request_auth_scope(
+    custom_auth: Optional[CustomAuthHeaders],
+    snowflake_login: Optional[str] = None,
+) -> Iterator[None]:
+    """Bind ``CustomAuthHeaders`` and optional Snowflake login for this request.
+
+    When ``X-Authorization-Snowflake`` is present, tools connect with OAuth
+    (``authenticator='oauth'``, ``token=...``). Otherwise env key/password
+    auth is used as before.
+    """
+    reset_token = _snowflake_request_ctx.set((custom_auth, snowflake_login))
+    try:
+        yield
+    finally:
+        _snowflake_request_ctx.reset(reset_token)
 
 
 _READ_ONLY_PREFIXES = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE"}
@@ -58,24 +89,24 @@ def _tool_error(
 def _build_connect_kwargs() -> dict[str, Any]:
     """Build kwargs for ``snowflake.connector.connect`` from settings.
 
-    Supports either password or RSA key-pair authentication. Key-pair takes
-    precedence if ``SNOWFLAKE_PRIVATE_KEY`` is set.
+    If the request scope carries ``X-Authorization-Snowflake`` (via
+    ``CustomAuthHeaders``), uses OAuth token authentication. Otherwise supports
+    password or RSA key-pair; key-pair takes precedence if
+    ``SNOWFLAKE_PRIVATE_KEY`` is set.
     """
     if not settings.SNOWFLAKE_ACCOUNT:
         raise AppException(
             "SNOWFLAKE_ACCOUNT is not configured",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
-    effective_user = settings.snowflake_user_effective
-    if not effective_user:
-        raise AppException(
-            "Snowflake user is not configured. Set SNOWFLAKE_USER_TEST or SNOWFLAKE_USER",
-            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
-        )
+
+    req_custom_auth, req_login = _snowflake_request_ctx.get((None, None))
+    oauth_token = resolve_snowflake_request_token(req_custom_auth)
+
+    effective_user = (req_login and req_login.strip()) or settings.snowflake_user_effective
 
     kwargs: dict[str, Any] = {
         "account": settings.SNOWFLAKE_ACCOUNT,
-        "user": effective_user,
         "client_session_keep_alive": True,
         "network_timeout": settings.SNOWFLAKE_QUERY_TIMEOUT,
         "login_timeout": 30,
@@ -89,6 +120,29 @@ def _build_connect_kwargs() -> dict[str, Any]:
         kwargs["schema"] = settings.SNOWFLAKE_SCHEMA
     if settings.SNOWFLAKE_ROLE:
         kwargs["role"] = settings.SNOWFLAKE_ROLE
+
+    if oauth_token:
+        if not effective_user:
+            raise AppException(
+                "Snowflake OAuth from X-Authorization-Snowflake requires a login name. "
+                "Pass a JWT user email or set SNOWFLAKE_USER / SNOWFLAKE_USER_TEST.",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+        kwargs["user"] = effective_user
+        kwargs["authenticator"] = "oauth"
+        kwargs["token"] = oauth_token
+        logger.info(
+            "snowflake.connect using OAuth token from request (user=%s)",
+            effective_user,
+        )
+        return kwargs
+
+    if not effective_user:
+        raise AppException(
+            "Snowflake user is not configured. Set SNOWFLAKE_USER_TEST or SNOWFLAKE_USER",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+    kwargs["user"] = effective_user
 
     if settings.SNOWFLAKE_PRIVATE_KEY:
         # Key-pair auth requires a DER-encoded private key. Convert from PEM

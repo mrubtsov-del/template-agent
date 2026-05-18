@@ -8,7 +8,7 @@ vendor/shadowbot_agent_api/api.py and is mounted via app.include_router.
 """
 
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Union
+from typing import AsyncGenerator, Optional, Union
 from uuid import uuid4
 
 from shadowbot_agent_api import (
@@ -19,6 +19,7 @@ from shadowbot_agent_api import (
     require_auth,
     stream_chat_handler,
 )
+from shadowbot_agent_api.models import CustomAuthHeaders
 
 from template_agent.src.core.manager import AgentManager
 from template_agent.src.routes.common import logger
@@ -36,6 +37,7 @@ def _utc_iso_z() -> str:
 async def handle_stream_chat(
     request: ConversationRequest,
     user: UserContext,
+    custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> AsyncGenerator[Union[StreamChunk, StreamEnd], None]:
     """Yield StreamChunk for each token and a terminating StreamEnd."""
     conv_id = request.conversationId or str(uuid4())
@@ -48,7 +50,8 @@ async def handle_stream_chat(
         user_id=user_identifier,
     )
 
-    manager = AgentManager()
+    snowflake_login = user.email or user.preferred_username or user.sub
+    manager = AgentManager(custom_auth=custom_auth, snowflake_login=snowflake_login)
     stream_req = StreamRequest(
         message=request.question,
         thread_id=conv_id,

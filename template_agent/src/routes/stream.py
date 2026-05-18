@@ -8,8 +8,11 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+
+from shadowbot_agent_api.auth import get_custom_auth_headers
+from shadowbot_agent_api.models import CustomAuthHeaders
 
 from template_agent.src.core.manager import AgentManager
 from template_agent.src.schema import StreamRequest
@@ -98,7 +101,11 @@ def _sse_response_example() -> dict[int | str, Any]:
 @router.post(
     "/v1/stream", response_class=StreamingResponse, responses=_sse_response_example()
 )
-async def stream(user_input: StreamRequest, request: Request) -> StreamingResponse:
+async def stream(
+    user_input: StreamRequest,
+    request: Request,
+    custom_auth: CustomAuthHeaders = Depends(get_custom_auth_headers),
+) -> StreamingResponse:
     """Stream AI agent responses in real-time using simplified event format.
 
     This endpoint provides the core streaming functionality following the
@@ -143,9 +150,19 @@ async def stream(user_input: StreamRequest, request: Request) -> StreamingRespon
     access_token = request.headers.get("X-Token")
     app_logger.info(f"Received token: {'Yes' if access_token else 'No'}")
 
+    snowflake_login = (
+        user_input.user_id
+        if user_input.user_id and user_input.user_id != "anonymous"
+        else None
+    )
+
     # Initialize AgentManager BEFORE streaming to catch initialization errors
     try:
-        agent_manager = AgentManager(redhat_sso_token=access_token)
+        agent_manager = AgentManager(
+            redhat_sso_token=access_token,
+            custom_auth=custom_auth,
+            snowflake_login=snowflake_login,
+        )
     except Exception as e:
         app_logger.error(f"Failed to initialize AgentManager: {e}")
         raise HTTPException(

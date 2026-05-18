@@ -18,10 +18,10 @@ from starlette.responses import JSONResponse
 from shadowbot_agent_api import (
     chat_api_router as shadowbot_chat_router,
     chat_api_router_v2 as shadowbot_chat_router_v2,
-    configure_auth,
     register_exception_handlers as register_shadowbot_exception_handlers,
-    setup_auth_from_env,
 )
+
+from template_agent.src.core.shadowbot_auth import configure_shadowbot_auth_from_settings
 
 from template_agent.src.core.agent import initialize_database
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
@@ -160,21 +160,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.critical(f"Failed to initialize database on startup: {e}")
         raise
 
-    # Configure Shadowbot authentication from environment variables
-    # (AUTH_ENABLED, AUTH_ISSUER, AUTH_AUDIENCE, AUTH_JWKS_URL).
-    # If AUTH_ENABLED=false the call is a no-op and @require_auth will 401.
-    auth_config = setup_auth_from_env()
-    if auth_config:
-        configure_auth(auth_config)
-        logger.info(
-            f"Shadowbot auth ENABLED (issuer={auth_config.issuer}, "
-            f"audience={auth_config.audience})"
-        )
-    else:
-        logger.warning(
-            "Shadowbot auth DISABLED - @require_auth endpoints will return 401. "
-            "Set AUTH_ENABLED=true + AUTH_ISSUER/AUDIENCE/JWKS_URL to enable."
-        )
+    # Configure Shadowbot JWT validation (AUTH_* env / ConfigMap).
+    # Without this, @require_auth V2 chat returns 401 for every request.
+    configure_shadowbot_auth_from_settings()
 
     logger.info("Agent server ready - MCP connection will be established per-request")
     yield

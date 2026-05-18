@@ -17,7 +17,7 @@ from shadowbot_agent_api import (
     chat_handler,
     require_auth,
 )
-from shadowbot_agent_api.models import Response
+from shadowbot_agent_api.models import CustomAuthHeaders, Response
 
 from template_agent.src.core.manager import AgentManager
 from template_agent.src.routes.common import logger, resolve_user_id
@@ -30,6 +30,7 @@ from template_agent.src.schema import StreamRequest
 async def handle_chat_request(
     request: ConversationRequest,
     user: Optional[UserContext] = None,
+    custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> ConversationResponse:
     """Run the agent to completion and return the final text answer."""
     conv_id = request.conversationId or str(uuid4())
@@ -42,7 +43,10 @@ async def handle_chat_request(
     )
 
     try:
-        manager = AgentManager()
+        manager = AgentManager(
+            custom_auth=custom_auth,
+            snowflake_login=resolve_user_id(request, user),
+        )
         stream_req = StreamRequest(
             message=request.question,
             thread_id=conv_id,

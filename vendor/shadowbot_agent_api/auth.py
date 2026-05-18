@@ -15,6 +15,27 @@ from shadowbot_agent_api.logger import get_python_logger
 
 logger = get_python_logger(Constants.PYTHON_LOG_LEVEL)
 
+
+def _jwt_string_from_request(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials],
+) -> Optional[str]:
+    """Resolve JWT string from standard Bearer or Red Hat gateway header.
+
+    Many proxies forward the EmployeeIDP JWT as ``Authorization: Bearer``;
+    others only set ``X-Authorization-RHAuth`` (with or without ``Bearer ``).
+    """
+    if credentials and credentials.credentials:
+        return credentials.credentials.strip()
+    raw = request.headers.get("x-authorization-rhauth")
+    if not raw:
+        return None
+    raw = raw.strip()
+    if raw.lower().startswith("bearer "):
+        return raw[7:].strip() or None
+    return raw or None
+
+
 # Global auth configuration
 _auth_config: Optional[AuthConfig] = None
 _jwks_cache: Dict[str, Dict] = {}
@@ -123,18 +144,19 @@ async def verify_token(token: str, config: AuthConfig) -> UserContext:
         if not key:
             raise AuthenticationError("Unable to find appropriate key in JWKS")
         
-        # Verify and decode the token
+        # Verify and decode the token (issuer must match iss claim whenever
+        # verify_iss is True; do not tie issuer to verify_aud).
         payload = jwt.decode(
             token,
             key,
             algorithms=config.algorithms,
-            issuer=config.issuer if config.verify_aud else None,
+            issuer=config.issuer,
             audience=config.audience if config.verify_aud else None,
             options={
                 "verify_exp": config.verify_exp,
                 "verify_aud": config.verify_aud,
-                "verify_iss": True
-            }
+                "verify_iss": True,
+            },
         )
         
         # Extract user information
@@ -159,7 +181,8 @@ async def verify_token(token: str, config: AuthConfig) -> UserContext:
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[UserContext]:
     """FastAPI dependency to get the current user from JWT token."""
     config = get_auth_config()
@@ -167,9 +190,11 @@ async def get_current_user(
     # If auth is not configured or disabled, return None
     if not config or not config.enabled:
         return None
-    
+
+    token = _jwt_string_from_request(request, credentials)
+
     # If no credentials provided and auth is required, raise error
-    if not credentials:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization token required",
@@ -177,7 +202,7 @@ async def get_current_user(
         )
     
     try:
-        user_context = await verify_token(credentials.credentials, config)
+        user_context = await verify_token(token, config)
         return user_context
     except AuthenticationError as e:
         raise HTTPException(
@@ -188,7 +213,8 @@ async def get_current_user(
 
 
 async def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[UserContext]:
     """FastAPI dependency to optionally get the current user from JWT token."""
     config = get_auth_config()
@@ -197,16 +223,23 @@ async def get_optional_user(
     if not config or not config.enabled:
         return None
 
+    token = _jwt_string_from_request(request, credentials)
+
     # If no credentials provided, return None (optional auth)
-    if not credentials:
+    if not token:
         return None
 
     try:
-        user_context = await verify_token(credentials.credentials, config)
+        user_context = await verify_token(token, config)
         return user_context
-    except AuthenticationError:
-        # For optional auth, we don't raise errors, just return None
-        return None
+    except AuthenticationError as e:
+        # Token was sent (Authorization or X-Authorization-RHAuth) but invalid/expired.
+        # Return 401 with the verification error instead of treating as "no auth".
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
 async def get_custom_auth_headers(request: Request) -> CustomAuthHeaders:
@@ -216,6 +249,10 @@ async def get_custom_auth_headers(request: Request) -> CustomAuthHeaders:
     Extracts:
     1. Authorization bearer token from "Authorization: Bearer <token>" header
     2. All X-Authorization-* headers for third-party services
+
+    Note: User JWT resolution for protected routes uses ``get_optional_user`` /
+    ``get_current_user``, which also accept ``X-Authorization-RHAuth`` when
+    ``Authorization`` is missing (see ``_jwt_string_from_request``).
 
     Examples:
         Authorization: Bearer eyJhbGci...
@@ -259,6 +296,9 @@ async def get_custom_auth_headers(request: Request) -> CustomAuthHeaders:
             auth_tokens[service_name] = header_value
 
             logger.debug(f"Extracted custom auth header for service: {service_name}")
+
+    if not bearer_token:
+        bearer_token = _jwt_string_from_request(request, None)
 
     return CustomAuthHeaders(bearer_token=bearer_token, auth_tokens=auth_tokens)
 

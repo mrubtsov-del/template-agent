@@ -11,3 +11,11 @@ data:
   SNOWFLAKE_QUERY_TIMEOUT: "60"
   SNOWFLAKE_MAX_ROWS: "1000"
   LANGFUSE_TRACING_ENVIRONMENT: "production"
+  # Shadowbot JWT — required for V2 @require_auth (e.g. POST /api/v2/conversations/chat)
+  AUTH_ENABLED: "true"
+  AUTH_AUDIENCE: "account"
+  AUTH_ISSUER: "https://auth.redhat.com/auth/realms/EmployeeIDP"
+  AUTH_JWKS_URL: "https://auth.redhat.com/auth/realms/EmployeeIDP/protocol/openid-connect/certs"
+  AUTH_ALGORITHMS: "RS256"
+  AUTH_VERIFY_EXP: "true"
+  AUTH_VERIFY_AUD: "true"
