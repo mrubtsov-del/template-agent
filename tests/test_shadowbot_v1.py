@@ -70,7 +70,7 @@ class TestV1ChatHandler:
     async def test_returns_conversation_response_with_success_marker(
         self, monkeypatch
     ):
-        monkeypatch.setattr(v1_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(v1_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager())
 
         req = ConversationRequest(question="Hi")
         resp = await v1_chat.handle_chat_request(req, user=_FAKE_USER)
@@ -84,7 +84,7 @@ class TestV1ChatHandler:
 
     @pytest.mark.asyncio
     async def test_reuses_provided_conversation_id(self, monkeypatch):
-        monkeypatch.setattr(v1_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(v1_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager())
 
         req = ConversationRequest(question="Hi", conversationID="conv-123")
         resp = await v1_chat.handle_chat_request(req, user=_FAKE_USER)
@@ -99,7 +99,7 @@ class TestV1ChatHandler:
                 raise RuntimeError("boom")
                 yield  # pragma: no cover - unreachable
 
-        monkeypatch.setattr(v1_chat, "AgentManager", _Boom)
+        monkeypatch.setattr(v1_chat, "build_agent_manager", lambda *a, **k: _Boom())
 
         req = ConversationRequest(question="trigger error")
         resp = await v1_chat.handle_chat_request(req, user=_FAKE_USER)
@@ -111,7 +111,7 @@ class TestV1ChatHandler:
 class TestV1StreamHandler:
     @pytest.mark.asyncio
     async def test_emits_stream_chunks_then_stream_end(self, monkeypatch):
-        monkeypatch.setattr(v1_stream, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(v1_stream, "build_agent_manager", lambda *a, **k: _FakeAgentManager())
 
         req = ConversationRequest(question="Hi", conversationID="c-1")
         events = [
@@ -130,6 +130,19 @@ class TestV1StreamHandler:
         assert last.timestamp.endswith("Z")
         assert last.messageReferenceList == []
         assert last.imageReferenceList is None
+
+    @pytest.mark.asyncio
+    async def test_handlers_accept_custom_auth_param(self):
+        import inspect
+
+        for handler in (
+            v1_chat.handle_chat_request,
+            v1_stream.handle_stream_chat,
+            v1_conversations.handle_get_conversations,
+            v1_messages.handle_get_messages,
+            v1_feedback.handle_feedback,
+        ):
+            assert "custom_auth" in inspect.signature(handler).parameters
 
 
 class TestV1RetrievalHandlers:

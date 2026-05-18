@@ -1,12 +1,11 @@
 """Shadowbot V1 conversation list handler.
 
-# /api/v1/conversations
+# GET /api/v1/conversations
 
-Returns the list of conversations owned by the authenticated user.
-A persistence layer is not yet implemented, so the stub returns [].
+DUMMY IMPLEMENTATION: returns [] until thread metadata persistence is wired.
 """
 
-from typing import List
+from typing import List, Optional
 
 from shadowbot_agent_api import (
     Conversation,
@@ -14,18 +13,23 @@ from shadowbot_agent_api import (
     get_conversations_handler,
     require_auth,
 )
+from shadowbot_agent_api.models import CustomAuthHeaders
 
-from template_agent.src.routes.common import logger
+from template_agent.src.routes.common import logger, snowflake_auth_present
 
 
-# /api/v1/conversations
 @get_conversations_handler()
 @require_auth
-async def handle_get_conversations(user: UserContext) -> List[Conversation]:
+async def handle_get_conversations(
+    user: Optional[UserContext] = None,
+    custom_auth: Optional[CustomAuthHeaders] = None,
+) -> List[Conversation]:
     """Return the user's conversations (stub: empty list)."""
+    user_id = (user.email if user else None) or (user.sub if user else None) or "anonymous"
     logger.warning(
         "[V1] DUMMY IMPLEMENTATION - List conversations returns empty list. "
         "Wire up persistence to enable history.",
-        user_id=user.email or user.sub,
+        user_id=user_id,
+        snowflake_auth=snowflake_auth_present(custom_auth),
     )
     return []
