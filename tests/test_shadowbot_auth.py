@@ -25,6 +25,22 @@ class TestConfigureShadowbotAuth:
         monkeypatch.setattr(settings, "AUTH_ENABLED", False)
         assert shadowbot_auth.configure_shadowbot_auth_from_settings() is False
 
+    def test_validate_raises_when_enabled_but_incomplete(self, monkeypatch):
+        from template_agent.src.core.exceptions.exceptions import AppException
+
+        monkeypatch.setattr(settings, "AUTH_ENABLED", True)
+        monkeypatch.setattr(settings, "AUTH_ISSUER", None)
+        with pytest.raises(AppException, match="AUTH_ISSUER"):
+            shadowbot_auth.validate_shadowbot_auth_settings(settings)
+
+    def test_normalize_issuer_strips_trailing_slash(self):
+        assert (
+            shadowbot_auth.normalize_issuer(
+                "https://auth.redhat.com/auth/realms/EmployeeIDP/"
+            )
+            == "https://auth.redhat.com/auth/realms/EmployeeIDP"
+        )
+
     def test_enabled_when_settings_complete(self, monkeypatch):
         monkeypatch.setattr(settings, "AUTH_ENABLED", True)
         monkeypatch.setattr(
@@ -42,6 +58,17 @@ class TestConfigureShadowbotAuth:
 
 
 class TestRhAuthHeader:
+    @pytest.mark.asyncio
+    async def test_get_optional_user_accepts_raw_authorization_jwt(self, monkeypatch):
+        from shadowbot_agent_api.auth import _jwt_string_from_request
+
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", b"aaa.bbb.ccc")],
+        }
+        request = Request(scope)
+        assert _jwt_string_from_request(request, None) == "aaa.bbb.ccc"
+
     @pytest.mark.asyncio
     async def test_get_optional_user_accepts_x_authorization_rhauth(self, monkeypatch):
         configure_auth(

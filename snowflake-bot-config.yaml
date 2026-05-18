@@ -11,7 +11,7 @@ data:
   SNOWFLAKE_QUERY_TIMEOUT: "60"
   SNOWFLAKE_MAX_ROWS: "1000"
   LANGFUSE_TRACING_ENVIRONMENT: "production"
-  # Shadowbot JWT — required for V2 @require_auth (e.g. POST /api/v2/conversations/chat)
+  # Shadowbot JWT (OAUTH_ISSUER→AUTH_ISSUER, JWKS_URL→AUTH_JWKS_URL). Prod below; stage: auth.stage.redhat.com
   AUTH_ENABLED: "true"
   AUTH_AUDIENCE: "account"
   AUTH_ISSUER: "https://auth.redhat.com/auth/realms/EmployeeIDP"

@@ -186,7 +186,7 @@ class Settings(BaseSettings):
         """Return Snowflake username with backward-compatible fallback order."""
         return self.SNOWFLAKE_USER_TEST or self.SNOWFLAKE_USER
 
-    # Shadowbot JWT (vendor reads AUTH_* at runtime via configure_auth)
+    # Shadowbot JWT — team doc OAUTH_ISSUER / JWKS_URL map to AUTH_ISSUER / AUTH_JWKS_URL
     AUTH_ENABLED: bool = Field(
         default=False,
         json_schema_extra={
@@ -198,18 +198,21 @@ class Settings(BaseSettings):
         default=None,
         json_schema_extra={
             "env": "AUTH_ISSUER",
-            "description": "JWT issuer (e.g. https://auth.redhat.com/auth/realms/EmployeeIDP)",
+            "description": "JWT issuer (team doc: OAUTH_ISSUER). Prod: auth.redhat.com/.../EmployeeIDP",
         },
     )
     AUTH_AUDIENCE: Optional[str] = Field(
         default=None,
-        json_schema_extra={"env": "AUTH_AUDIENCE", "description": "JWT audience (e.g. account)"},
+        json_schema_extra={
+            "env": "AUTH_AUDIENCE",
+            "description": "JWT audience (team doc: AUTH_AUDIENCE=account)",
+        },
     )
     AUTH_JWKS_URL: Optional[str] = Field(
         default=None,
         json_schema_extra={
             "env": "AUTH_JWKS_URL",
-            "description": "JWKS URL for the same realm as AUTH_ISSUER",
+            "description": "JWKS certs URL (team doc: JWKS_URL). Must match AUTH_ISSUER env",
         },
     )
     AUTH_ALGORITHMS: str = Field(
@@ -302,6 +305,10 @@ def validate_config(settings: Settings) -> None:
             f"PYTHON_LOG_LEVEL must be one of {valid_log_levels}, got {settings.PYTHON_LOG_LEVEL}",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
+
+    from template_agent.src.core.shadowbot_auth import validate_shadowbot_auth_settings
+
+    validate_shadowbot_auth_settings(settings)
 
 
 # Create settings instance without validation (validation happens in main.py)

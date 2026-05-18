@@ -12,6 +12,7 @@ import uvicorn
 
 from template_agent.src.api import app
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
+from template_agent.src.core.shadowbot_auth import configure_shadowbot_auth_from_settings
 from template_agent.src.settings import settings
 from template_agent.src.settings import validate_config as validate_config_func
 from template_agent.utils.google_creds import initialize_google_genai
@@ -37,6 +38,12 @@ def validate_and_initialize_config() -> None:
         # Use the validate_config function from settings.py
         validate_config_func(settings)
         initialize_google_genai()
+
+        if settings.AUTH_ENABLED and not configure_shadowbot_auth_from_settings():
+            raise AppException(
+                "AUTH_ENABLED=true but Shadowbot JWT auth could not be configured",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
 
         logger.info("Configuration validation and initialization passed")
 

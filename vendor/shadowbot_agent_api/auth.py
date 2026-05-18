@@ -16,24 +16,45 @@ from shadowbot_agent_api.logger import get_python_logger
 logger = get_python_logger(Constants.PYTHON_LOG_LEVEL)
 
 
+def _looks_like_jwt(value: str) -> bool:
+    """Heuristic: three base64url segments separated by dots."""
+    return value.count(".") >= 2
+
+
+def _strip_bearer_prefix(value: str) -> str:
+    value = value.strip()
+    if value.lower().startswith("bearer "):
+        return value[7:].strip()
+    return value
+
+
 def _jwt_string_from_request(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials],
 ) -> Optional[str]:
-    """Resolve JWT string from standard Bearer or Red Hat gateway header.
+    """Resolve JWT from EmployeeIDP headers (skill / shadowbot-agents forwarding).
 
-    Many proxies forward the EmployeeIDP JWT as ``Authorization: Bearer``;
-    others only set ``X-Authorization-RHAuth`` (with or without ``Bearer ``).
+    Accepted sources (first match wins):
+    - ``Authorization: Bearer <jwt>`` (HTTPBearer dependency)
+    - ``Authorization: <jwt>`` (raw token, no Bearer prefix)
+    - ``X-Authorization-RHAuth: Bearer <jwt>`` or raw JWT (Shadowbot platform)
     """
     if credentials and credentials.credentials:
         return credentials.credentials.strip()
-    raw = request.headers.get("x-authorization-rhauth")
-    if not raw:
-        return None
-    raw = raw.strip()
-    if raw.lower().startswith("bearer "):
-        return raw[7:].strip() or None
-    return raw or None
+
+    auth_header = request.headers.get("authorization")
+    if auth_header:
+        token = _strip_bearer_prefix(auth_header)
+        if token and (_looks_like_jwt(token) or len(token) > 20):
+            return token
+
+    rhauth = request.headers.get("x-authorization-rhauth")
+    if rhauth:
+        token = _strip_bearer_prefix(rhauth)
+        if token:
+            return token
+
+    return None
 
 
 # Global auth configuration
@@ -128,53 +149,86 @@ def get_key_from_jwks(token_header: Dict[str, Any], jwks: Dict[str, Any]) -> Opt
     return None
 
 
+def _normalize_issuer(url: str) -> str:
+    return url.strip().rstrip("/")
+
+
 async def verify_token(token: str, config: AuthConfig) -> UserContext:
     """Verify JWT token and return user context."""
     try:
-        # Decode header without verification to get kid
         unverified_header = jwt.get_unverified_header(token)
-        
-        # Get JWKS
+
         if not config.jwks_url:
             raise AuthenticationError("JWKS URL not configured")
         jwks = await get_jwks(config.jwks_url)
-        
-        # Get the key for verification
+
         key = get_key_from_jwks(unverified_header, jwks)
         if not key:
             raise AuthenticationError("Unable to find appropriate key in JWKS")
-        
-        # Verify and decode the token (issuer must match iss claim whenever
-        # verify_iss is True; do not tie issuer to verify_aud).
-        payload = jwt.decode(
-            token,
-            key,
-            algorithms=config.algorithms,
-            issuer=config.issuer,
-            audience=config.audience if config.verify_aud else None,
-            options={
-                "verify_exp": config.verify_exp,
-                "verify_aud": config.verify_aud,
-                "verify_iss": True,
-            },
-        )
-        
-        # Extract user information
+
+        issuer = _normalize_issuer(config.issuer)
+        decode_options = {
+            "verify_exp": config.verify_exp,
+            "verify_aud": config.verify_aud,
+            "verify_iss": True,
+        }
+
+        try:
+            payload = jwt.decode(
+                token,
+                key,
+                algorithms=config.algorithms,
+                issuer=issuer,
+                audience=config.audience if config.verify_aud else None,
+                options=decode_options,
+            )
+        except jwt.InvalidAudienceError:
+            # Keycloak EmployeeIDP: ``aud`` may be a list or ``azp`` may hold the client id.
+            if not config.verify_aud:
+                raise
+            unverified = jwt.decode(
+                token,
+                key,
+                algorithms=config.algorithms,
+                issuer=issuer,
+                options={**decode_options, "verify_aud": False},
+            )
+            aud = unverified.get("aud")
+            azp = unverified.get("azp")
+            aud_ok = aud == config.audience or (
+                isinstance(aud, list) and config.audience in aud
+            )
+            if not aud_ok and azp != config.audience:
+                raise AuthenticationError(
+                    f"Invalid token: Audience doesn't match. Expected {config.audience}, "
+                    f"got aud={aud!r}, azp={azp!r}"
+                )
+            payload = unverified
+
+        token_iss = _normalize_issuer(payload.get("iss", ""))
+        if token_iss and token_iss != issuer:
+            raise AuthenticationError(
+                f"Invalid token: Issuer mismatch. Expected {issuer}, got {token_iss}. "
+                "Use matching prod/stage AUTH_ISSUER and AUTH_JWKS_URL for this token."
+            )
+
         user_context = UserContext(
             sub=payload.get("sub", ""),
-            email=payload.get("email"),
+            email=payload.get("email") or payload.get("preferred_username"),
             name=payload.get("name"),
             preferred_username=payload.get("preferred_username"),
             groups=payload.get("groups", []),
-            raw_token=payload
+            raw_token=payload,
         )
-        
+
         return user_context
-        
+
     except jwt.ExpiredSignatureError:
         raise AuthenticationError("Token has expired")
     except jwt.InvalidTokenError as e:
         raise AuthenticationError(f"Invalid token: {e}")
+    except AuthenticationError:
+        raise
     except Exception as e:
         logger.error(f"Token verification failed: {e}")
         raise AuthenticationError(f"Token verification failed: {e}")
@@ -279,26 +333,22 @@ async def get_custom_auth_headers(request: Request) -> CustomAuthHeaders:
                 token = custom_auth.get("PeopleAI")
                 data = await query_peopleai(token)
     """
-    auth_tokens = {}
-    bearer_token = None
+    auth_tokens: Dict[str, str] = {}
+    bearer_token = _jwt_string_from_request(request, None)
 
-    # Iterate through all headers
     for header_name, header_value in request.headers.items():
-        # Extract Authorization bearer token
-        if header_name.lower() == "authorization" and header_value.startswith("Bearer "):
-            bearer_token = header_value[7:]  # Remove "Bearer " prefix
-            logger.debug("Extracted Authorization bearer token")
-
-        # Check if header matches X-Authorization-* pattern (case-insensitive)
-        elif header_name.lower().startswith("x-authorization-"):
-            # Extract service name (everything after "X-Authorization-")
-            service_name = header_name[16:]  # len("X-Authorization-") = 16
-            auth_tokens[service_name] = header_value
-
-            logger.debug(f"Extracted custom auth header for service: {service_name}")
-
-    if not bearer_token:
-        bearer_token = _jwt_string_from_request(request, None)
+        lower = header_name.lower()
+        if lower == "authorization":
+            continue
+        if not lower.startswith("x-authorization-"):
+            continue
+        service_name = header_name[16:]
+        if service_name.lower() == "rhauth":
+            if not bearer_token:
+                bearer_token = _strip_bearer_prefix(header_value)
+            continue
+        auth_tokens[service_name] = header_value
+        logger.debug(f"Extracted custom auth header for service: {service_name}")
 
     return CustomAuthHeaders(bearer_token=bearer_token, auth_tokens=auth_tokens)
 

@@ -18,7 +18,7 @@ data:
   SNOWFLAKE_QUERY_TIMEOUT: "60"
   SNOWFLAKE_MAX_ROWS: "1000"
   SSO_CALLBACK_URL: ""
-  # Shadowbot JWT (vendor reads AUTH_*). Prod EmployeeIDP; non-prod: auth.stage.redhat.com + matching JWKS.
+  # Shadowbot JWT: OAUTH_ISSUER→AUTH_ISSUER, JWKS_URL→AUTH_JWKS_URL. Prod; non-prod use auth.stage.redhat.com for both.
   AUTH_ENABLED: "true"
   AUTH_AUDIENCE: "account"
   AUTH_ISSUER: "https://auth.redhat.com/auth/realms/EmployeeIDP"
