@@ -159,6 +159,58 @@ class TestV2StreamHandler:
         assert final.session_id == "sess-1"
         assert final.timestamp.endswith("Z")
 
+    @pytest.mark.asyncio
+    async def test_message_only_ai_fallback_emits_token_and_final(self, monkeypatch):
+        """When AgentManager yields no tokens, AI text from updates must still stream."""
+
+        class _MessageOnlyManager:
+            async def stream_response(self, _request):
+                yield {
+                    "type": "message",
+                    "content": {"type": "ai", "content": "Answer without tokens"},
+                }
+
+        monkeypatch.setattr(
+            v2_stream,
+            "build_agent_manager",
+            lambda *a, **k: _MessageOnlyManager(),
+        )
+        events = [
+            e
+            async for e in v2_stream.handle_stream_chat_v2(
+                ConversationRequestV2(message="Hi"), user=None
+            )
+        ]
+        assert [e.type for e in events] == ["token", "message"]
+        assert events[0].content == "Answer without tokens"
+        assert events[-1].content.content == "Answer without tokens"
+
+    @pytest.mark.asyncio
+    async def test_agent_error_event_surfaces_in_stream(self, monkeypatch):
+        class _ErrorManager:
+            async def stream_response(self, _request):
+                yield {
+                    "type": "error",
+                    "content": {
+                        "message": "Snowflake failed",
+                        "error_type": "agent_error",
+                    },
+                }
+
+        monkeypatch.setattr(
+            v2_stream, "build_agent_manager", lambda *a, **k: _ErrorManager()
+        )
+        events = [
+            e
+            async for e in v2_stream.handle_stream_chat_v2(
+                ConversationRequestV2(message="Hi"), user=None
+            )
+        ]
+        assert events[0].type == "token"
+        assert "Snowflake failed" in events[0].content
+        assert events[-1].type == "message"
+        assert events[-1].content.response_metadata["finish_reason"] == "error"
+
 
 class TestV2RetrievalHandlers:
     @pytest.mark.asyncio
