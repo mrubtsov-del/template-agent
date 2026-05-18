@@ -1,12 +1,8 @@
 """Shadowbot V2 conversation messages handler.
 
-# /api/v2/conversations/{conversation_id}/messages
+# GET /api/v2/conversations/{conversation_id}/messages
 
-Returns paginated message history (List[ChatMessageV2]) for a conversation.
-
-DUMMY IMPLEMENTATION: stubbed until the persistence layer is wired up. The
-expected backing store is the `rag_metadata` table from the V2 migration
-guide; once present, replace the empty list with a real query.
+DUMMY IMPLEMENTATION: empty paginated history until persistence is wired.
 """
 
 from typing import Optional
@@ -19,10 +15,13 @@ from shadowbot_agent_api import (
 from shadowbot_agent_api.models import CustomAuthHeaders
 from shadowbot_agent_api.models_v2 import MessageHistoryResponseV2
 
-from template_agent.src.routes.common import logger
+from template_agent.src.routes.common import (
+    logger,
+    resolve_user_label,
+    snowflake_auth_present,
+)
 
 
-# /api/v2/conversations/{conversation_id}/messages
 @get_messages_handler_v2()
 @require_auth
 async def handle_get_messages_v2(
@@ -33,14 +32,15 @@ async def handle_get_messages_v2(
     custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> MessageHistoryResponseV2:
     """Return messages for a conversation (stub: empty list)."""
-    user_email = (user.email if user else None) or "anonymous"
+    user_id = resolve_user_label(user)
     logger.warning(
         "[V2] DUMMY IMPLEMENTATION - Get messages returns empty list. "
         "Wire up persistence to enable message history.",
         conversation_id=conversation_id,
-        user_id=user_email,
+        user_id=user_id,
         page=page,
         page_size=page_size,
+        snowflake_auth=snowflake_auth_present(custom_auth),
     )
     return MessageHistoryResponseV2(
         messages=[],

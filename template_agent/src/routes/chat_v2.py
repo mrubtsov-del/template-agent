@@ -1,37 +1,28 @@
 """Shadowbot V2 synchronous chat handler.
 
-# /api/v2/conversations/chat
-
-V2 differences from V1:
-- Request field is `message` (not `question`).
-- `session_id` is part of the model (auto-generated if missing).
-- Returns a single `ChatMessageV2` instead of `ConversationResponse`.
-- Sources are `List[Source]`, not a `Dict[str, str]`.
-- `custom_auth: CustomAuthHeaders` exposes `X-Authorization-*` third-party tokens.
+# POST /api/v2/conversations/chat
 """
 
-from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
-from shadowbot_agent_api import (
-    UserContext,
-    chat_handler_v2,
-    require_auth,
-)
+from shadowbot_agent_api import UserContext, chat_handler_v2, require_auth
 from shadowbot_agent_api.models import CustomAuthHeaders
 from shadowbot_agent_api.models_v2 import ChatMessageV2, ConversationRequestV2
 
-from template_agent.src.core.manager import AgentManager
-from template_agent.src.routes.common import logger
+from template_agent.src.routes.common import (
+    build_agent_manager,
+    build_chat_message_v2,
+    collect_final_ai_text,
+    logger,
+    resolve_snowflake_login,
+    resolve_user_id_v2,
+    resolve_v2_conversation_ids,
+    snowflake_auth_present,
+)
 from template_agent.src.schema import StreamRequest
 
 
-def _utc_iso_z() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
-# /api/v2/conversations/chat
 @chat_handler_v2()
 @require_auth
 async def handle_chat_request_v2(
@@ -39,49 +30,34 @@ async def handle_chat_request_v2(
     user: Optional[UserContext] = None,
     custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> ChatMessageV2:
-    """Run the agent to completion and return a single ChatMessageV2.
+    """Run the agent to completion and return a single ``ChatMessageV2``.
 
-    Note: the first parameter is named `request_body` (not `request`) to avoid
-    a name clash with the FastAPI `Request` object that vendor's V2 dispatcher
-    injects via kwargs when a parameter named `request` exists. Naming matches
-    the shadowbot-agent-api skill convention.
+    Parameter is ``request_body`` (not ``request``) so vendor's V2 dispatcher
+    does not inject a FastAPI ``Request`` kwarg with the same name.
     """
-    conv_id = request_body.conversation_id or str(uuid4())
-    session_id = request_body.session_id or conv_id
+    conv_id, session_id = resolve_v2_conversation_ids(request_body)
     msg_id = str(uuid4())
-    user_email = (
-        (user.email if user else None)
-        or (request_body.user_info.userEmail if request_body.user_info else None)
-        or "anonymous"
-    )
+    user_id = resolve_user_id_v2(request_body, user)
+    snowflake_login = resolve_snowflake_login(user, request_body=request_body)
 
     logger.info(
         "[V2] Chat called",
         conversation_id=conv_id,
         session_id=session_id,
-        user_id=user_email,
+        user_id=user_id,
+        snowflake_auth=snowflake_auth_present(custom_auth),
     )
 
     try:
-        manager = AgentManager(
-            custom_auth=custom_auth,
-            snowflake_login=user_email if user_email != "anonymous" else None,
-        )
+        manager = build_agent_manager(custom_auth, snowflake_login)
         stream_req = StreamRequest(
             message=request_body.message,
             thread_id=conv_id,
             session_id=session_id,
-            user_id=user_email,
+            user_id=user_id,
             stream_tokens=False,
         )
-
-        final_text = ""
-        async for event in manager.stream_response(stream_req):
-            if event.get("type") != "message":
-                continue
-            content = event.get("content", {})
-            if content.get("type") == "ai" and content.get("content"):
-                final_text = content["content"]
+        final_text = await collect_final_ai_text(manager, stream_req)
 
         logger.info(
             "[V2] Chat completed",
@@ -90,37 +66,27 @@ async def handle_chat_request_v2(
             chars=len(final_text),
         )
 
-        return ChatMessageV2(
-            type="ai",
+        return build_chat_message_v2(
             content=final_text or "No response generated.",
             message_id=msg_id,
             conversation_id=conv_id,
             session_id=session_id,
-            tool_calls=[],
-            response_metadata={"finish_reason": "stop"},
-            references=[],
-            images=[],
             custom_fields=request_body.custom_fields or {},
-            timestamp=_utc_iso_z(),
         )
     except Exception as exc:
         logger.error(
             "[V2] Chat failed",
             conversation_id=conv_id,
-            user_id=user_email,
+            user_id=user_id,
             error=str(exc),
             exc_info=True,
         )
-        return ChatMessageV2(
-            type="ai",
+        return build_chat_message_v2(
             content=f"Internal error: {exc}",
             message_id=msg_id,
             conversation_id=conv_id,
             session_id=session_id,
-            tool_calls=[],
-            response_metadata={"finish_reason": "error", "error": str(exc)},
-            references=[],
-            images=[],
             custom_fields={},
-            timestamp=_utc_iso_z(),
+            finish_reason="error",
+            error=str(exc),
         )

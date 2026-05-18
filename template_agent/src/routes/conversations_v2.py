@@ -1,13 +1,8 @@
 """Shadowbot V2 conversation list handler.
 
-# /api/v2/conversations
+# GET /api/v2/conversations
 
-Returns paginated list of conversations for the authenticated user.
-
-DUMMY IMPLEMENTATION: persistence is not wired yet, so this returns an empty
-list with the correct response envelope. When the metadata store
-(`thread_metadata` table from the Shadowbot V2 migration guide) is added,
-replace the stub body with a real DB lookup keyed on `user.email`.
+DUMMY IMPLEMENTATION: empty paginated list until thread metadata is wired.
 """
 
 from typing import Optional
@@ -20,10 +15,13 @@ from shadowbot_agent_api import (
 from shadowbot_agent_api.models import CustomAuthHeaders
 from shadowbot_agent_api.models_v2 import ConversationListResponseV2
 
-from template_agent.src.routes.common import logger
+from template_agent.src.routes.common import (
+    logger,
+    resolve_user_label,
+    snowflake_auth_present,
+)
 
 
-# /api/v2/conversations
 @get_conversations_handler_v2()
 @require_auth
 async def handle_get_conversations_v2(
@@ -34,14 +32,15 @@ async def handle_get_conversations_v2(
     custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> ConversationListResponseV2:
     """Return paginated conversations (stub: empty list until DB is wired)."""
-    user_email = (user.email if user else None) or "anonymous"
+    user_id = resolve_user_label(user)
     logger.warning(
         "[V2] DUMMY IMPLEMENTATION - List conversations returns empty list. "
         "Wire up persistence to enable history.",
-        user_id=user_email,
+        user_id=user_id,
         page=page,
         page_size=page_size,
         platform=platform,
+        snowflake_auth=snowflake_auth_present(custom_auth),
     )
     return ConversationListResponseV2(
         conversations=[],

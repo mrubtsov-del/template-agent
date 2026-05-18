@@ -63,7 +63,9 @@ class _FakeAgentManager:
 class TestV2ChatHandler:
     @pytest.mark.asyncio
     async def test_returns_chat_message_v2(self, monkeypatch):
-        monkeypatch.setattr(v2_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(
+            v2_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager()
+        )
 
         req = ConversationRequestV2(message="Hi", sessionID="sess-1")
         msg = await v2_chat.handle_chat_request_v2(req, user=None)
@@ -81,7 +83,9 @@ class TestV2ChatHandler:
 
     @pytest.mark.asyncio
     async def test_session_id_defaults_to_conversation_id(self, monkeypatch):
-        monkeypatch.setattr(v2_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(
+            v2_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager()
+        )
 
         req = ConversationRequestV2(message="Hi", conversationID="c-7")
         msg = await v2_chat.handle_chat_request_v2(req, user=None)
@@ -97,7 +101,9 @@ class TestV2ChatHandler:
         handler signature, which collides with positional `ConversationRequestV2`.
         The skill convention is `request_body`.
         """
-        monkeypatch.setattr(v2_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(
+            v2_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager()
+        )
         import inspect
 
         params = inspect.signature(v2_chat.handle_chat_request_v2).parameters
@@ -114,11 +120,29 @@ class TestV2ChatHandler:
         assert "feedback_data" in fb_params
         assert "request" not in fb_params
 
+    @pytest.mark.asyncio
+    async def test_handlers_accept_custom_auth_param(self):
+        import inspect
+
+        handlers = (
+            v2_chat.handle_chat_request_v2,
+            v2_stream.handle_stream_chat_v2,
+            v2_conversations.handle_get_conversations_v2,
+            v2_messages.handle_get_messages_v2,
+            v2_feedback.handle_feedback_v2,
+            v2_feedback_categories.handle_get_feedback_categories_v2,
+            v2_data_sources.handle_get_data_sources_v2,
+        )
+        for handler in handlers:
+            assert "custom_auth" in inspect.signature(handler).parameters
+
 
 class TestV2StreamHandler:
     @pytest.mark.asyncio
     async def test_emits_token_events_then_final_message(self, monkeypatch):
-        monkeypatch.setattr(v2_stream, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(
+            v2_stream, "build_agent_manager", lambda *a, **k: _FakeAgentManager()
+        )
 
         req = ConversationRequestV2(message="Hi", sessionID="sess-1")
         events = [
@@ -242,7 +266,9 @@ class TestV2Endpoints:
         `serialization_alias` on its id fields (`session_id`, `message_id`,
         `conversation_id`), so the response uses the Python attribute names.
         """
-        monkeypatch.setattr(v2_chat, "AgentManager", _FakeAgentManager)
+        monkeypatch.setattr(
+            v2_chat, "build_agent_manager", lambda *a, **k: _FakeAgentManager()
+        )
         r = _make_v2_client().post(
             "/api/v2/conversations/chat",
             json={"message": "Hi", "sessionID": "sess-1"},
