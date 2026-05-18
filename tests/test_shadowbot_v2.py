@@ -384,6 +384,20 @@ class TestV2Endpoints:
         assert "Snowflake" in data["liveCollections"][0]["name"]
         assert data["liveCollections"][0]["lastUpdated"] is not None
 
+    def test_get_conversations_serializes_camel_case_pagination(self):
+        """Shadowbot platform expects camelCase pagination fields in list JSON."""
+        r = _make_v2_client().get(
+            "/api/v2/conversations", params={"page": 1, "page_size": 30}
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["conversations"] == []
+        assert data["totalCount"] == 0
+        assert data["page"] == 1
+        assert data["pageSize"] == 30
+        assert "total_count" not in data
+        assert "page_size" not in data
+
 
 class TestV2AuthGating:
     """All V2 endpoints under @require_auth must return 401 without a token."""

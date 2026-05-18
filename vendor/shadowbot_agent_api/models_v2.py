@@ -237,6 +237,7 @@ class MessageHistoryResponseV2(BaseModel):
     total_count: Optional[int] = Field(
         default=None,
         validation_alias="totalCount",
+        serialization_alias="totalCount",
         description="Total number of messages (for pagination support)"
     )
     page: Optional[int] = Field(
@@ -246,6 +247,7 @@ class MessageHistoryResponseV2(BaseModel):
     page_size: Optional[int] = Field(
         default=None,
         validation_alias="pageSize",
+        serialization_alias="pageSize",
         description="Number of messages per page"
     )
 
@@ -385,6 +387,7 @@ class ConversationListResponseV2(BaseModel):
     total_count: Optional[int] = Field(
         default=None,
         validation_alias="totalCount",
+        serialization_alias="totalCount",
         description="Total number of conversations available (for pagination)"
     )
     page: Optional[int] = Field(
@@ -394,6 +397,7 @@ class ConversationListResponseV2(BaseModel):
     page_size: Optional[int] = Field(
         default=None,
         validation_alias="pageSize",
+        serialization_alias="pageSize",
         description="Number of items per page (for pagination)"
     )
 

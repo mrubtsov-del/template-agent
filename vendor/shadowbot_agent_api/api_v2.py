@@ -412,7 +412,7 @@ async def get_conversations_endpoint_v2(
         logger.warning("No handler registered for 'get_conversations_v2'. Returning empty list.")
         return ConversationListResponseV2(
             conversations=[],
-            totalCount=0
+            total_count=0,
         )
     except AgentException:
         # Re-raise AgentException to be handled by custom exception handler
