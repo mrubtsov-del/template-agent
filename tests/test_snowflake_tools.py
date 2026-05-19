@@ -181,6 +181,32 @@ def test_connect_oauth_fallback_to_env(monkeypatch):
     assert calls[1]["user"] == "svc_user"
 
 
+def test_build_connect_kwargs_private_key_without_password(monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PASSWORD", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PRIVATE_KEY", pem)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE", None)
+    with snowflake_tools.snowflake_request_auth_scope(None, None):
+        kwargs = snowflake_tools._build_connect_kwargs()
+    assert "password" not in kwargs
+    assert "private_key" in kwargs
+    assert kwargs["user"] == "svc_user"
+
+
 def test_build_connect_kwargs_env_password_when_no_request_token(monkeypatch):
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")

@@ -30,6 +30,7 @@ from template_agent.src.routes.health import router as health_router
 from template_agent.src.routes.history import router as history_router
 from template_agent.src.routes.shadowbot_health import router as shadowbot_health_router
 from template_agent.src.routes.stream import router as stream_router
+from template_agent.src.routes.plots import router as plots_router
 from template_agent.src.routes.threads import router as threads_router
 
 # Importing these modules executes the @*_handler[_v2]() decorators which
@@ -195,6 +196,7 @@ app.include_router(stream_router)
 app.include_router(feedback_router)
 app.include_router(history_router)
 app.include_router(threads_router)
+app.include_router(plots_router)
 
 # Shadowbot V1 contract: /api/v1/conversations/{chat,chat/stream,...}
 # Business-logic handlers are registered via decorators in the V1 modules

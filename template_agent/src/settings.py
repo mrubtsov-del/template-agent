@@ -185,8 +185,8 @@ class Settings(BaseSettings):
         json_schema_extra={
             "env": "SNOWFLAKE_PREFER_ENV_CREDENTIALS",
             "description": (
-                "When true, ignore X-Authorization-Snowflake and use SNOWFLAKE_PASSWORD "
-                "or SNOWFLAKE_PRIVATE_KEY from env/secret (preprod service account)."
+                "When true, ignore X-Authorization-Snowflake and use SNOWFLAKE_PRIVATE_KEY "
+                "or SNOWFLAKE_PASSWORD from env/secret (preprod service account)."
             ),
         },
     )
@@ -197,6 +197,36 @@ class Settings(BaseSettings):
             "description": (
                 "If X-Authorization-Snowflake OAuth fails, retry with env credentials "
                 "when SNOWFLAKE_PASSWORD or SNOWFLAKE_PRIVATE_KEY is configured."
+            ),
+        },
+    )
+
+    # Plotting (matplotlib + seaborn — data-viz-plots skill)
+    PLOT_ENABLED: bool = Field(
+        default=True,
+        json_schema_extra={"env": "PLOT_ENABLED"},
+    )
+    PLOT_ARTIFACT_DIR: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "PLOT_ARTIFACT_DIR",
+            "description": "Directory for PNG chart artifacts served at /api/v1/plots/",
+        },
+    )
+    PLOT_MAX_ROWS: int = Field(
+        default=5000,
+        json_schema_extra={
+            "env": "PLOT_MAX_ROWS",
+            "description": "Maximum rows from query results used for a single chart",
+        },
+    )
+    AGENT_PUBLIC_BASE_URL: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "AGENT_PUBLIC_BASE_URL",
+            "description": (
+                "Public base URL for plot links in Shadowbot responses "
+                "(e.g. https://snowflake-bot-....openshiftapps.com)"
             ),
         },
     )

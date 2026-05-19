@@ -15,6 +15,7 @@ from langgraph.prebuilt import create_react_agent
 from template_agent.src.core.exceptions.exceptions import AppException, AppExceptionCode
 from template_agent.src.core.prompt import get_system_prompt
 from template_agent.src.core.storage import get_global_checkpoint
+from template_agent.src.core.tools.plot_tools import PLOT_TOOLS
 from template_agent.src.core.tools.snowflake_tools import SNOWFLAKE_TOOLS
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
@@ -173,6 +174,10 @@ async def get_template_agent(
         logger.warning(
             "SNOWFLAKE_ACCOUNT is not set; Snowflake tools will not be available"
         )
+
+    if settings.PLOT_ENABLED:
+        tools.extend(PLOT_TOOLS)
+        logger.info("Loaded %s plotting tools (matplotlib/seaborn)", len(PLOT_TOOLS))
 
     # Initialize the language model
     model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)

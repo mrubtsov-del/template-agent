@@ -199,7 +199,7 @@ def _build_connect_kwargs() -> dict[str, Any]:
 
     Priority (shadowbot-agent-api skill):
     1. ``X-Authorization-Snowflake`` OAuth when present (unless preprod override).
-    2. ``SNOWFLAKE_PASSWORD`` / ``SNOWFLAKE_PRIVATE_KEY`` from env/secret.
+    2. ``SNOWFLAKE_PRIVATE_KEY`` (preferred) or ``SNOWFLAKE_PASSWORD`` from env/secret.
     """
     req_custom_auth, req_login = _snowflake_request_ctx.get((None, None))
     oauth_token = resolve_snowflake_request_token(req_custom_auth)

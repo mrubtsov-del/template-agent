@@ -18,6 +18,7 @@ from template_agent.src.routes.common import (
     resolve_snowflake_login,
     resolve_user_id_v2,
     resolve_v2_conversation_ids,
+    shadowbot_plot_image_references,
     snowflake_auth_present,
 )
 from template_agent.src.schema import StreamRequest
@@ -67,13 +68,23 @@ async def handle_chat_request_v2(
             chars=len(final_text),
         )
 
-        return build_chat_message_v2(
+        plot_images = shadowbot_plot_image_references()
+        custom_fields = dict(request_body.custom_fields or {})
+        if plot_images:
+            custom_fields["plots"] = [
+                {"plot_id": img.article_id, "url": img.url, "title": img.article_title}
+                for img in plot_images
+            ]
+        msg = build_chat_message_v2(
             content=final_text or "No response generated.",
             message_id=msg_id,
             conversation_id=conv_id,
             session_id=session_id,
-            custom_fields=request_body.custom_fields or {},
+            custom_fields=custom_fields,
         )
+        if plot_images:
+            msg.images = plot_images
+        return msg
     except Exception as exc:
         logger.error(
             "[V2] Chat failed",

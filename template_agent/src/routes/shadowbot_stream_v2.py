@@ -22,6 +22,7 @@ from template_agent.src.routes.common import (
     resolve_snowflake_login,
     resolve_user_id_v2,
     resolve_v2_conversation_ids,
+    shadowbot_plot_image_references,
     snowflake_auth_present,
 )
 from template_agent.src.schema import StreamRequest
@@ -170,17 +171,27 @@ async def handle_stream_chat_v2(
     if not accumulated and last_ai.get("content"):
         accumulated = last_ai["content"]
 
+    plot_images = shadowbot_plot_image_references()
+    custom_fields = dict(request_body.custom_fields or {})
+    if plot_images:
+        custom_fields["plots"] = [
+            {"plot_id": img.article_id, "url": img.url, "title": img.article_title}
+            for img in plot_images
+        ]
+
     final_message = build_chat_message_v2(
         content=accumulated or (stream_error and f"Error: {stream_error}") or "",
         message_id=msg_id,
         conversation_id=conv_id,
         session_id=session_id,
-        custom_fields=request_body.custom_fields or {},
+        custom_fields=custom_fields,
         finish_reason=finish_reason,
         error=stream_error,
     )
     if last_ai.get("tool_calls"):
         final_message.tool_calls = last_ai["tool_calls"]
+    if plot_images:
+        final_message.images = plot_images
 
     yield StreamEventV2(type="message", content=final_message)
 

@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from shadowbot_agent_api import ConversationRequest, UserContext
 from shadowbot_agent_api.models import CustomAuthHeaders
+from shadowbot_agent_api.models import ImageReference
 from shadowbot_agent_api.models_v2 import ChatMessageV2, ConversationRequestV2
 
 from template_agent.src.schema import StreamRequest
@@ -89,6 +90,27 @@ def resolve_user_label(user: Optional[UserContext]) -> str:
     if user and user.sub:
         return user.sub
     return "anonymous"
+
+
+def shadowbot_plot_image_references() -> list[ImageReference]:
+    """Build ``ImageReference`` list from charts created in the current request."""
+    from template_agent.src.core.plot_artifacts import (
+        get_session_plot_artifacts,
+        plot_public_url,
+    )
+
+    refs: list[ImageReference] = []
+    for index, artifact in enumerate(get_session_plot_artifacts()):
+        refs.append(
+            ImageReference(
+                filename=artifact.filename,
+                url=plot_public_url(artifact.plot_id),
+                image_index=index,
+                article_title=artifact.title,
+                article_id=artifact.plot_id,
+            )
+        )
+    return refs
 
 
 def build_chat_message_v2(

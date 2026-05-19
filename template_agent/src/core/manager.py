@@ -22,6 +22,7 @@ from langgraph.pregel import Pregel
 from langgraph.types import Command, Interrupt
 
 from template_agent.src.core.agent import get_template_agent
+from template_agent.src.core.plot_artifacts import plot_request_scope
 from template_agent.src.core.tools.snowflake_tools import snowflake_request_auth_scope
 from template_agent.src.core.agent_utils import (
     convert_message_content_to_string,
@@ -88,68 +89,61 @@ class AgentManager:
         """
         # Bind per-request Snowflake auth (X-Authorization-Snowflake) for tool calls.
         with snowflake_request_auth_scope(self._custom_auth, self._snowflake_login):
-            # Use persistent agent for both streaming and state persistence
-            # This ensures LangGraph handles state management automatically
-            async with get_template_agent(
-                self.redhat_sso_token, enable_checkpointing=True
-            ) as persistent_agent:
-                try:
-                    # Prepare input for the persistent agent
-                    kwargs, run_id, thread_id = await self._handle_input(
-                        request, persistent_agent
-                    )
-
-                    app_logger.info(
-                        f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
-                    )
-
-                    # Reset tool call tracking for this stream
-                    self._current_tool_call_id = None
-
-                    # Use persistent agent for streaming - LangGraph will handle state automatically
-                    async for stream_event in persistent_agent.astream(
-                        **kwargs, stream_mode=["updates", "messages", "custom"]
-                    ):
-                        if not isinstance(stream_event, tuple):
-                            continue
-
-                        stream_mode, event = stream_event
-
-                        # Update tool call tracking based on stream events
-                        self._update_tool_call_tracking(stream_mode, event)
-
-                        # Convert LangGraph events to simplified format
-                        effective_session_id = request.session_id or thread_id
-                        formatted_events = self._format_events(
-                            stream_mode,
-                            event,
-                            request.stream_tokens,
-                            run_id,
-                            thread_id,
-                            effective_session_id,
+            with plot_request_scope():
+                async with get_template_agent(
+                    self.redhat_sso_token, enable_checkpointing=True
+                ) as persistent_agent:
+                    try:
+                        kwargs, run_id, thread_id = await self._handle_input(
+                            request, persistent_agent
                         )
 
-                        for formatted_event in formatted_events:
-                            if formatted_event:
-                                yield formatted_event
+                        app_logger.info(
+                            f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
+                        )
 
-                    # No manual state saving needed - LangGraph handles this automatically
-                    app_logger.info(
-                        f"Conversation completed and auto-saved for thread {thread_id}"
-                    )
+                        self._current_tool_call_id = None
 
-                except Exception as e:
-                    app_logger.error(
-                        f"Error in AgentManager stream_response: {e}", exc_info=True
-                    )
-                    yield {
-                        "type": "error",
-                        "content": {
-                            "message": "Internal server error",
-                            "recoverable": False,
-                            "error_type": "agent_error",
-                        },
-                    }
+                        async for stream_event in persistent_agent.astream(
+                            **kwargs, stream_mode=["updates", "messages", "custom"]
+                        ):
+                            if not isinstance(stream_event, tuple):
+                                continue
+
+                            stream_mode, event = stream_event
+
+                            self._update_tool_call_tracking(stream_mode, event)
+
+                            effective_session_id = request.session_id or thread_id
+                            formatted_events = self._format_events(
+                                stream_mode,
+                                event,
+                                request.stream_tokens,
+                                run_id,
+                                thread_id,
+                                effective_session_id,
+                            )
+
+                            for formatted_event in formatted_events:
+                                if formatted_event:
+                                    yield formatted_event
+
+                        app_logger.info(
+                            f"Conversation completed and auto-saved for thread {thread_id}"
+                        )
+
+                    except Exception as e:
+                        app_logger.error(
+                            f"Error in AgentManager stream_response: {e}", exc_info=True
+                        )
+                        yield {
+                            "type": "error",
+                            "content": {
+                                "message": "Internal server error",
+                                "recoverable": False,
+                                "error_type": "agent_error",
+                            },
+                        }
 
     async def _handle_input(
         self, request: StreamRequest, agent: Pregel
