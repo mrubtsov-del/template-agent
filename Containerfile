@@ -13,10 +13,11 @@ WORKDIR /app
 USER root
 COPY pyproject.toml /app/pyproject.toml
 RUN pip install uv
-ENV UV_HTTP_TIMEOUT=180
+ENV UV_HTTP_TIMEOUT=180 \
+    UV_CONCURRENCY=2 \
+    PIP_NO_CACHE_DIR=1
 RUN uv venv
-RUN source /app/.venv/bin/activate
-RUN uv pip install -r pyproject.toml
+RUN uv pip install --no-cache -r pyproject.toml
 USER default
 
 # --------------------------------------------------------------------------------------------------

@@ -10,12 +10,22 @@ metadata:
   name: snowflake-bot
   namespace: rhu-platforms--pipeline
 spec:
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
   source:
     type: Binary
   strategy:
     type: Docker
     dockerStrategy:
       dockerfilePath: Containerfile
+  # Binary builds install ~160 wheels (scipy, pyarrow, streamlit, …); default pod OOMs.
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "4"
   output:
     to:
       kind: ImageStreamTag
