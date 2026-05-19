@@ -220,60 +220,6 @@ def _render_chart(
 
 
 @tool
-def create_chart(
-    plot_type: PlotType,
-    columns: list[str],
-    rows: list[list[Any]],
-    x_column: str,
-    y_column: Optional[str] = None,
-    hue_column: Optional[str] = None,
-    title: str = "",
-    x_label: str = "",
-    y_label: str = "",
-) -> dict[str, Any]:
-    """Create a publication-style chart from tabular data (e.g. SQL query results).
-
-    Use after ``run_select_query`` when the user asks for a plot, chart, or visualization.
-    Pass the same ``columns`` and ``rows`` returned by the query.
-
-    Args:
-        plot_type: One of bar, line, scatter, heatmap, box, violin, histogram.
-        columns: Column names (same order as SQL result).
-        rows: Row values as list of lists.
-        x_column: Column for x-axis (or category axis).
-        y_column: Column for y-axis (required for most types except heatmap pivot).
-        hue_column: Optional grouping/color column.
-        title: Chart title.
-        x_label: Optional x-axis label override.
-        y_label: Optional y-axis label override.
-
-    Returns:
-        Dict with plot_id, url, and message on success; ``error`` on failure.
-    """
-    if not settings.PLOT_ENABLED:
-        return _tool_error("Plotting is disabled (PLOT_ENABLED=false)")
-
-    try:
-        df = _rows_to_dataframe(columns, rows)
-    except Exception as exc:
-        return _tool_error(f"Invalid tabular data: {exc}")
-
-    if df.empty:
-        return _tool_error("No rows to plot")
-
-    return _render_chart(
-        plot_type,
-        df,
-        x_column=x_column,
-        y_column=y_column,
-        hue_column=hue_column,
-        title=title,
-        x_label=x_label,
-        y_label=y_label,
-    )
-
-
-@tool
 def create_chart_from_query(
     plot_type: PlotType,
     query_result: dict[str, Any],
@@ -325,4 +271,5 @@ def create_chart_from_query(
     )
 
 
-PLOT_TOOLS = [create_chart, create_chart_from_query]
+# Only expose create_chart_from_query: Gemini rejects nested list[list] tool schemas.
+PLOT_TOOLS = [create_chart_from_query]

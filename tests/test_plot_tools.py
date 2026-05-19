@@ -17,11 +17,13 @@ def test_create_bar_chart(monkeypatch, tmp_path):
     monkeypatch.setattr(plot_tools.settings, "PLOT_ARTIFACT_DIR", str(tmp_path))
     monkeypatch.setattr(plot_tools.settings, "AGENT_PUBLIC_BASE_URL", "https://agent.test")
 
-    result = plot_tools.create_chart.invoke(
+    result = plot_tools.create_chart_from_query.invoke(
         {
             "plot_type": "bar",
-            "columns": ["category", "value"],
-            "rows": [["A", 10], ["B", 25], ["C", 15]],
+            "query_result": {
+                "columns": ["category", "value"],
+                "rows": [["A", 10], ["B", 25], ["C", 15]],
+            },
             "x_column": "category",
             "y_column": "value",
             "title": "Sample counts",
@@ -38,16 +40,24 @@ def test_create_chart_rejects_missing_column(monkeypatch, tmp_path):
     monkeypatch.setattr(plot_tools.settings, "PLOT_ENABLED", True)
     monkeypatch.setattr(plot_tools.settings, "PLOT_ARTIFACT_DIR", str(tmp_path))
 
-    result = plot_tools.create_chart.invoke(
+    result = plot_tools.create_chart_from_query.invoke(
         {
             "plot_type": "line",
-            "columns": ["x", "y"],
-            "rows": [[1, 2]],
+            "query_result": {"columns": ["x", "y"], "rows": [[1, 2]]},
             "x_column": "missing",
             "y_column": "y",
         }
     )
     assert "error" in result
+
+
+def test_plot_tools_gemini_compatible_schema():
+    """Gemini rejects tool params with nested array items missing a type."""
+    schema = plot_tools.create_chart_from_query.args_schema.model_json_schema()
+    props = schema.get("properties", {})
+    assert "query_result" in props
+    assert props["query_result"].get("type") == "object"
+    assert "rows" not in props
 
 
 def test_create_chart_from_query_result(monkeypatch, tmp_path):

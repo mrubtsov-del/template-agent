@@ -16,6 +16,7 @@ data:
   SNOWFLAKE_OAUTH_FALLBACK_TO_ENV: "true"
   PLOT_ENABLED: "true"
   PLOT_MAX_ROWS: "5000"
+  MPLCONFIGDIR: "/tmp/matplotlib"
   AGENT_PUBLIC_BASE_URL: "https://snowflake-bot-rhu-platforms--pipeline.apps.mpp-w2-preprod.cfln.p1.openshiftapps.com"
   LANGFUSE_TRACING_ENVIRONMENT: "production"
   # Shadowbot JWT (preprod: OAUTH_ISSUER→AUTH_ISSUER, JWKS_URL→AUTH_JWKS_URL — use stage EmployeeIDP)
