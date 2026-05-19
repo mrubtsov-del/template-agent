@@ -37,6 +37,10 @@ class UserInput(BaseModel):
         default=None,
         examples=["847c6285-8fc9-4560-a83f-4e6285809254"],
     )
+    platform: str | None = Field(
+        default=None,
+        description="Platform where the request originated (web, mobile, slack, etc.).",
+    )
 
 
 class StreamRequest(UserInput):

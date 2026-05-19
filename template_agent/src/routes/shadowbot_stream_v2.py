@@ -70,6 +70,7 @@ async def handle_stream_chat_v2(
         thread_id=conv_id,
         session_id=session_id,
         user_id=user_id,
+        platform=request_body.platform,
         stream_tokens=True,
     )
 

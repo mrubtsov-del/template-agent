@@ -216,19 +216,33 @@ class TestV2StreamHandler:
 
 class TestV2RetrievalHandlers:
     @pytest.mark.asyncio
-    async def test_conversations_returns_paginated_empty(self):
-        resp = await v2_conversations.handle_get_conversations_v2(
-            page=2, page_size=10
+    async def test_conversations_returns_registered_threads(self):
+        from template_agent.src.core import storage
+
+        storage.reset_global_storage()
+        storage.record_thread_activity(
+            "dev@example.com",
+            "conv-a",
+            session_id="sess-a",
+            title_hint="Snowflake tables",
+            platform="web",
         )
-        assert resp.conversations == []
-        assert resp.total_count == 0
-        assert resp.page == 2
-        assert resp.page_size == 10
+        user = UserContext(sub="u-1", email="dev@example.com")
+        resp = await v2_conversations.handle_get_conversations_v2(
+            page=1, page_size=10, user=user
+        )
+        assert resp.total_count == 1
+        assert resp.conversations[0].conversation_id == "conv-a"
+        assert resp.conversations[0].title == "Snowflake tables"
+        assert resp.conversations[0].platform == "web"
 
     @pytest.mark.asyncio
-    async def test_messages_returns_paginated_empty(self):
+    async def test_messages_returns_empty_for_unknown_thread(self):
         resp = await v2_messages.handle_get_messages_v2(
-            conversation_id="conv-x", page=1, page_size=50
+            conversation_id="conv-x",
+            page=1,
+            page_size=50,
+            user=UserContext(sub="u-1", email="dev@example.com"),
         )
         assert resp.conversation_id == "conv-x"
         assert resp.messages == []
@@ -386,13 +400,23 @@ class TestV2Endpoints:
 
     def test_get_conversations_serializes_camel_case_pagination(self):
         """Shadowbot platform expects camelCase pagination fields in list JSON."""
+        from template_agent.src.core import storage
+
+        storage.reset_global_storage()
+        storage.record_thread_activity(
+            "dev@example.com",
+            "conv-list-1",
+            title_hint="My chat",
+            platform="web",
+        )
         r = _make_v2_client().get(
             "/api/v2/conversations", params={"page": 1, "page_size": 30}
         )
         assert r.status_code == 200
         data = r.json()
-        assert data["conversations"] == []
-        assert data["totalCount"] == 0
+        assert data["totalCount"] == 1
+        assert data["conversations"][0]["conversationID"] == "conv-list-1"
+        assert data["conversations"][0]["title"] == "My chat"
         assert data["page"] == 1
         assert data["pageSize"] == 30
         assert "total_count" not in data

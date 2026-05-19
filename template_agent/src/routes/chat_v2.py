@@ -55,6 +55,7 @@ async def handle_chat_request_v2(
             thread_id=conv_id,
             session_id=session_id,
             user_id=user_id,
+            platform=request_body.platform,
             stream_tokens=False,
         )
         final_text = await collect_final_ai_text(manager, stream_req)

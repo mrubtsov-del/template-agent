@@ -228,10 +228,12 @@ class MessageHistoryResponseV2(BaseModel):
     )
     conversation_id: str = Field(
         validation_alias="conversationID",
+        serialization_alias="conversationID",
         description="ID of the conversation these messages belong to"
     )
     session_id: str = Field(
         validation_alias="sessionID",
+        serialization_alias="sessionID",
         description="ID of the session"
     )
     total_count: Optional[int] = Field(
@@ -335,10 +337,12 @@ class ConversationV2(BaseModel):
     # IDs
     conversation_id: str = Field(
         validation_alias="conversationID",
+        serialization_alias="conversationID",
         description="Unique identifier for the conversation"
     )
     session_id: str = Field(
         validation_alias="sessionID",
+        serialization_alias="sessionID",
         description="Session ID this conversation belongs to"
     )
 
@@ -353,12 +357,14 @@ class ConversationV2(BaseModel):
     user_info: Optional[UserInfo] = Field(
         default=None,
         validation_alias="userInfo",
+        serialization_alias="userInfo",
         description="Information about the user who created the conversation"
     )
 
     # Audit trail
     modifier_details: Dict[str, Any] = Field(
         validation_alias="modifierDetails",
+        serialization_alias="modifierDetails",
         description="Audit metadata (created_at, updated_at, created_by, updated_by, last_message_at)"
     )
 
@@ -366,6 +372,7 @@ class ConversationV2(BaseModel):
     custom_fields: Dict[str, Any] = Field(
         default_factory=dict,
         validation_alias="customFields",
+        serialization_alias="customFields",
         description="Platform-specific metadata (e.g., slack_channel_id, last_message_preview, unread_count)"
     )
 

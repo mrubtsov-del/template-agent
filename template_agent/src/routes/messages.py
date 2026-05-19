@@ -1,8 +1,6 @@
 """Shadowbot V1 conversation messages handler.
 
 # GET /api/v1/conversations/{conversation_id}/messages
-
-DUMMY IMPLEMENTATION: returns [] until message history persistence is wired.
 """
 
 from typing import List, Optional
@@ -15,7 +13,8 @@ from shadowbot_agent_api import (
 )
 from shadowbot_agent_api.models import CustomAuthHeaders
 
-from template_agent.src.routes.common import logger, snowflake_auth_present
+from template_agent.src.core.conversation_history import list_messages_for_conversation
+from template_agent.src.routes.common import logger, resolve_user_label, snowflake_auth_present
 
 
 @get_messages_handler()
@@ -25,13 +24,29 @@ async def handle_get_messages(
     user: Optional[UserContext] = None,
     custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> List[ConversationMessage]:
-    """Return messages for a conversation (stub: empty list)."""
-    user_id = (user.email if user else None) or (user.sub if user else None) or "anonymous"
-    logger.warning(
-        "[V1] DUMMY IMPLEMENTATION - Get messages returns empty list. "
-        "Wire up persistence to enable message history.",
+    """Return messages for a conversation (V1 shape)."""
+    user_id = resolve_user_label(user)
+    logger.info(
+        "[V1] Get messages",
         conversation_id=conversation_id,
         user_id=user_id,
         snowflake_auth=snowflake_auth_present(custom_auth),
     )
-    return []
+
+    result = list_messages_for_conversation(
+        user_id,
+        conversation_id,
+        page=1,
+        page_size=500,
+    )
+    return [
+        ConversationMessage(
+            conversationID=conversation_id,
+            type=msg.type,
+            content=msg.content,
+            comment=None,
+            reaction=None,
+            images=msg.images,
+        )
+        for msg in result.items
+    ]

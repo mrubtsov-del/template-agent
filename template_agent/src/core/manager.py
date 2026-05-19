@@ -28,7 +28,8 @@ from template_agent.src.core.agent_utils import (
     langchain_to_chat_message,
     remove_tool_calls,
 )
-from template_agent.src.core.storage import register_thread
+from template_agent.src.core.conversation_history import title_from_message
+from template_agent.src.core.storage import record_thread_activity
 from template_agent.src.schema import StreamRequest
 from template_agent.src.settings import settings
 from template_agent.utils.pylogger import get_python_logger
@@ -169,9 +170,13 @@ class AgentManager:
         effective_session_id = request.session_id or thread_id
         effective_user_id = request.user_id or "anonymous"
 
-        # Register thread for user (for in-memory storage tracking)
-        if settings.USE_INMEMORY_SAVER:
-            register_thread(effective_user_id, thread_id)
+        record_thread_activity(
+            effective_user_id,
+            thread_id,
+            session_id=effective_session_id,
+            title_hint=title_from_message(request.message),
+            platform=request.platform,
+        )
 
         # Generate AI call ID
         ai_call_id = f"ai_call_{str(uuid4())}"

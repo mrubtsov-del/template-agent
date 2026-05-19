@@ -1,8 +1,6 @@
 """Shadowbot V2 conversation list handler.
 
 # GET /api/v2/conversations
-
-DUMMY IMPLEMENTATION: empty paginated list until thread metadata is wired.
 """
 
 from typing import Optional
@@ -15,6 +13,7 @@ from shadowbot_agent_api import (
 from shadowbot_agent_api.models import CustomAuthHeaders
 from shadowbot_agent_api.models_v2 import ConversationListResponseV2
 
+from template_agent.src.core.conversation_history import list_conversations_for_user
 from template_agent.src.routes.common import (
     logger,
     resolve_user_label,
@@ -31,20 +30,27 @@ async def handle_get_conversations_v2(
     user: Optional[UserContext] = None,
     custom_auth: Optional[CustomAuthHeaders] = None,
 ) -> ConversationListResponseV2:
-    """Return paginated conversations (stub: empty list until DB is wired)."""
+    """Return paginated conversations for the authenticated user."""
     user_id = resolve_user_label(user)
-    logger.warning(
-        "[V2] DUMMY IMPLEMENTATION - List conversations returns empty list. "
-        "Wire up persistence to enable history.",
+    logger.info(
+        "[V2] Get conversations",
         user_id=user_id,
         page=page,
         page_size=page_size,
         platform=platform,
         snowflake_auth=snowflake_auth_present(custom_auth),
     )
+
+    result = list_conversations_for_user(
+        user_id,
+        page=page,
+        page_size=page_size,
+        platform=platform,
+        user=user,
+    )
     return ConversationListResponseV2(
-        conversations=[],
-        total_count=0,
+        conversations=result.items,
+        total_count=result.total_count,
         page=page,
         page_size=page_size,
     )
