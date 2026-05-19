@@ -180,6 +180,26 @@ class Settings(BaseSettings):
             "description": "Maximum number of rows to fetch from Snowflake queries",
         },
     )
+    SNOWFLAKE_PREFER_ENV_CREDENTIALS: bool = Field(
+        default=False,
+        json_schema_extra={
+            "env": "SNOWFLAKE_PREFER_ENV_CREDENTIALS",
+            "description": (
+                "When true, ignore X-Authorization-Snowflake and use SNOWFLAKE_PASSWORD "
+                "or SNOWFLAKE_PRIVATE_KEY from env/secret (preprod service account)."
+            ),
+        },
+    )
+    SNOWFLAKE_OAUTH_FALLBACK_TO_ENV: bool = Field(
+        default=True,
+        json_schema_extra={
+            "env": "SNOWFLAKE_OAUTH_FALLBACK_TO_ENV",
+            "description": (
+                "If X-Authorization-Snowflake OAuth fails, retry with env credentials "
+                "when SNOWFLAKE_PASSWORD or SNOWFLAKE_PRIVATE_KEY is configured."
+            ),
+        },
+    )
 
     @property
     def snowflake_user_effective(self) -> Optional[str]:

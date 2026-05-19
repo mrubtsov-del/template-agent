@@ -86,32 +86,22 @@ def _tool_error(
     return payload
 
 
-def _build_connect_kwargs() -> dict[str, Any]:
-    """Build kwargs for ``snowflake.connector.connect`` from settings.
+def _env_credentials_configured() -> bool:
+    return bool(settings.SNOWFLAKE_PRIVATE_KEY or settings.SNOWFLAKE_PASSWORD)
 
-    If the request scope carries ``X-Authorization-Snowflake`` (via
-    ``CustomAuthHeaders``), uses OAuth token authentication. Otherwise supports
-    password or RSA key-pair; key-pair takes precedence if
-    ``SNOWFLAKE_PRIVATE_KEY`` is set.
-    """
+
+def _base_connect_kwargs() -> dict[str, Any]:
     if not settings.SNOWFLAKE_ACCOUNT:
         raise AppException(
             "SNOWFLAKE_ACCOUNT is not configured",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
-
-    req_custom_auth, req_login = _snowflake_request_ctx.get((None, None))
-    oauth_token = resolve_snowflake_request_token(req_custom_auth)
-
-    effective_user = (req_login and req_login.strip()) or settings.snowflake_user_effective
-
     kwargs: dict[str, Any] = {
         "account": settings.SNOWFLAKE_ACCOUNT,
         "client_session_keep_alive": True,
         "network_timeout": settings.SNOWFLAKE_QUERY_TIMEOUT,
         "login_timeout": 30,
     }
-
     if settings.SNOWFLAKE_WAREHOUSE:
         kwargs["warehouse"] = settings.SNOWFLAKE_WAREHOUSE
     if settings.SNOWFLAKE_DATABASE:
@@ -120,33 +110,40 @@ def _build_connect_kwargs() -> dict[str, Any]:
         kwargs["schema"] = settings.SNOWFLAKE_SCHEMA
     if settings.SNOWFLAKE_ROLE:
         kwargs["role"] = settings.SNOWFLAKE_ROLE
+    return kwargs
 
-    if oauth_token:
-        if not effective_user:
-            raise AppException(
-                "Snowflake OAuth from X-Authorization-Snowflake requires a login name. "
-                "Pass a JWT user email or set SNOWFLAKE_USER / SNOWFLAKE_USER_TEST.",
-                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
-            )
-        kwargs["user"] = effective_user
-        kwargs["authenticator"] = "oauth"
-        kwargs["token"] = oauth_token
-        logger.info(
-            "snowflake.connect using OAuth token from request (user=%s)",
-            effective_user,
-        )
-        return kwargs
 
+def _resolve_effective_user(req_login: Optional[str]) -> str:
+    effective_user = (req_login and req_login.strip()) or settings.snowflake_user_effective
     if not effective_user:
         raise AppException(
             "Snowflake user is not configured. Set SNOWFLAKE_USER_TEST or SNOWFLAKE_USER",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
-    kwargs["user"] = effective_user
+    return effective_user
+
+
+def _build_oauth_connect_kwargs(
+    oauth_token: str, *, req_login: Optional[str]
+) -> dict[str, Any]:
+    """OAuth via Shadowbot ``X-Authorization-Snowflake`` (per-user)."""
+    kwargs = _base_connect_kwargs()
+    kwargs["user"] = _resolve_effective_user(req_login)
+    kwargs["authenticator"] = "oauth"
+    kwargs["token"] = oauth_token
+    logger.info(
+        "snowflake.connect using OAuth token from request (user=%s)",
+        kwargs["user"],
+    )
+    return kwargs
+
+
+def _build_env_connect_kwargs(*, req_login: Optional[str] = None) -> dict[str, Any]:
+    """Password or key-pair from env/secret (service account)."""
+    kwargs = _base_connect_kwargs()
+    kwargs["user"] = _resolve_effective_user(req_login)
 
     if settings.SNOWFLAKE_PRIVATE_KEY:
-        # Key-pair auth requires a DER-encoded private key. Convert from PEM
-        # at runtime so the secret can be stored as a regular PEM string.
         from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import serialization
 
@@ -173,7 +170,77 @@ def _build_connect_kwargs() -> dict[str, Any]:
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
 
+    logger.info(
+        "snowflake.connect using env credentials (user=%s)",
+        kwargs["user"],
+    )
     return kwargs
+
+
+def _should_use_request_oauth(oauth_token: Optional[str]) -> bool:
+    if not oauth_token:
+        return False
+    if settings.SNOWFLAKE_PREFER_ENV_CREDENTIALS and _env_credentials_configured():
+        logger.info(
+            "snowflake.connect ignoring X-Authorization-Snowflake "
+            "(SNOWFLAKE_PREFER_ENV_CREDENTIALS=true)"
+        )
+        return False
+    return True
+
+
+def _is_invalid_oauth_error(exc: snowflake.connector.Error) -> bool:
+    text = f"{getattr(exc, 'msg', '')} {exc}".lower()
+    return "oauth" in text and "token" in text
+
+
+def _build_connect_kwargs() -> dict[str, Any]:
+    """Build kwargs for ``snowflake.connector.connect``.
+
+    Priority (shadowbot-agent-api skill):
+    1. ``X-Authorization-Snowflake`` OAuth when present (unless preprod override).
+    2. ``SNOWFLAKE_PASSWORD`` / ``SNOWFLAKE_PRIVATE_KEY`` from env/secret.
+    """
+    req_custom_auth, req_login = _snowflake_request_ctx.get((None, None))
+    oauth_token = resolve_snowflake_request_token(req_custom_auth)
+
+    if _should_use_request_oauth(oauth_token):
+        return _build_oauth_connect_kwargs(oauth_token, req_login=req_login)
+
+    # Service account from secret: do not substitute Keycloak email as Snowflake user.
+    env_login = (
+        None
+        if settings.SNOWFLAKE_PREFER_ENV_CREDENTIALS and _env_credentials_configured()
+        else req_login
+    )
+    return _build_env_connect_kwargs(req_login=env_login)
+
+
+def _connect_snowflake() -> snowflake.connector.SnowflakeConnection:
+    """Connect, optionally falling back to env creds when platform OAuth fails."""
+    kwargs = _build_connect_kwargs()
+    used_oauth = kwargs.get("authenticator") == "oauth"
+    try:
+        return snowflake.connector.connect(**kwargs)
+    except snowflake.connector.Error as exc:
+        if (
+            used_oauth
+            and settings.SNOWFLAKE_OAUTH_FALLBACK_TO_ENV
+            and _env_credentials_configured()
+            and _is_invalid_oauth_error(exc)
+        ):
+            logger.warning(
+                "Snowflake OAuth from X-Authorization-Snowflake failed; "
+                "retrying with env credentials: %s",
+                getattr(exc, "msg", exc),
+            )
+            req_custom_auth, req_login = _snowflake_request_ctx.get((None, None))
+            # Service account: use SNOWFLAKE_USER_TEST, not Keycloak email.
+            _ = req_custom_auth
+            return snowflake.connector.connect(
+                **_build_env_connect_kwargs(req_login=None)
+            )
+        raise
 
 
 @contextmanager
@@ -182,7 +249,7 @@ def _snowflake_cursor() -> Iterator[DictCursor]:
 
     The cursor is closed and the connection released on exit even on errors.
     """
-    conn = snowflake.connector.connect(**_build_connect_kwargs())
+    conn = _connect_snowflake()
     try:
         cur = conn.cursor(DictCursor)
         try:

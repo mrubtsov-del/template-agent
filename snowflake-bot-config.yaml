@@ -10,6 +10,10 @@ data:
   MCP_ENABLED: "false"
   SNOWFLAKE_QUERY_TIMEOUT: "60"
   SNOWFLAKE_MAX_ROWS: "1000"
+  # Preprod: use SNOWFLAKE_* from secret when Shadowbot OAuth token is invalid.
+  # Prod per-user OAuth: set to "false" and fix X-Authorization-Snowflake on platform.
+  SNOWFLAKE_PREFER_ENV_CREDENTIALS: "true"
+  SNOWFLAKE_OAUTH_FALLBACK_TO_ENV: "true"
   LANGFUSE_TRACING_ENVIRONMENT: "production"
   # Shadowbot JWT (preprod: OAUTH_ISSUER→AUTH_ISSUER, JWKS_URL→AUTH_JWKS_URL — use stage EmployeeIDP)
   AUTH_ENABLED: "true"

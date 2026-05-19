@@ -132,6 +132,55 @@ def test_build_connect_kwargs_oauth_requires_login(monkeypatch):
     assert "login" in str(excinfo.value).lower() or "user" in str(excinfo.value).lower()
 
 
+def test_build_connect_kwargs_prefers_env_when_flag_set(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PASSWORD", "secret")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PRIVATE_KEY", None)
+    monkeypatch.setattr(
+        snowflake_tools.settings, "SNOWFLAKE_PREFER_ENV_CREDENTIALS", True
+    )
+    auth = CustomAuthHeaders(auth_tokens={"Snowflake": "bad-token"})
+    with snowflake_tools.snowflake_request_auth_scope(auth, "analyst@example.com"):
+        kwargs = snowflake_tools._build_connect_kwargs()
+    assert kwargs.get("authenticator") != "oauth"
+    assert kwargs["password"] == "secret"
+    assert kwargs["user"] == "svc_user"
+
+
+def test_connect_oauth_fallback_to_env(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER_TEST", None)
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PASSWORD", "secret")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_PRIVATE_KEY", None)
+    monkeypatch.setattr(
+        snowflake_tools.settings, "SNOWFLAKE_PREFER_ENV_CREDENTIALS", False
+    )
+    monkeypatch.setattr(
+        snowflake_tools.settings, "SNOWFLAKE_OAUTH_FALLBACK_TO_ENV", True
+    )
+    auth = CustomAuthHeaders(auth_tokens={"Snowflake": "bad-token"})
+    calls: list[dict] = []
+
+    def fake_connect(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("authenticator") == "oauth":
+            raise snowflake_tools.snowflake.connector.Error(
+                msg="Invalid OAuth access token"
+            )
+        return object()
+
+    monkeypatch.setattr(snowflake_tools.snowflake.connector, "connect", fake_connect)
+    with snowflake_tools.snowflake_request_auth_scope(auth, "analyst@example.com"):
+        snowflake_tools._connect_snowflake()
+    assert len(calls) == 2
+    assert calls[0]["authenticator"] == "oauth"
+    assert calls[1]["password"] == "secret"
+    assert calls[1]["user"] == "svc_user"
+
+
 def test_build_connect_kwargs_env_password_when_no_request_token(monkeypatch):
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ACCOUNT", "xy12345")
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_USER", "svc_user")
