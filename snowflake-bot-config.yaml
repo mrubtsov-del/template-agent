@@ -10,12 +10,6 @@ data:
   MCP_ENABLED: "false"
   SNOWFLAKE_QUERY_TIMEOUT: "60"
   SNOWFLAKE_MAX_ROWS: "1000"
-  # Multiple DBs/schemas (comma-separated). Examples:
-  # SNOWFLAKE_ALLOWED_DATABASES: "LEARNINGSOURCES_DB,LEARNINGAGGREGATE_DB"
-  # SNOWFLAKE_ALLOWED_SCHEMAS: "LEARNINGSOURCES_DB.INTERNAL_MARTS,LEARNINGAGGREGATE_DB.INTERNAL_MARTS"
-  # Or DB list + one schema from secret SNOWFLAKE_SCHEMA (see .env.example)
-  # Preprod: use SNOWFLAKE_* from secret when Shadowbot OAuth token is invalid.
-  # Prod per-user OAuth: set to "false" and fix X-Authorization-Snowflake on platform.
   SNOWFLAKE_PREFER_ENV_CREDENTIALS: "true"
   SNOWFLAKE_OAUTH_FALLBACK_TO_ENV: "true"
   PLOT_ENABLED: "true"
