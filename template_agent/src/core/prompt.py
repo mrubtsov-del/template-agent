@@ -6,6 +6,8 @@ template agent to provide consistent behavior and instructions.
 
 from datetime import datetime
 
+from template_agent.src.settings import settings
+
 
 def get_current_date() -> str:
     """Get the current date in a formatted string.
@@ -27,6 +29,26 @@ def get_system_prompt() -> str:
         The complete system prompt string with the current date.
     """
     current_date = get_current_date()
+    schema_targets = settings.snowflake_allowed_schema_targets
+    schema_block = ""
+    databases = settings.snowflake_allowed_databases
+    if schema_targets:
+        db_line = (
+            f"- Allowed databases: {', '.join(databases)}\n" if databases else ""
+        )
+        schema_block = (
+            "## Snowflake context (configured — do not guess)\n"
+            f"{db_line}"
+            f"- Allowed schemas (DATABASE.SCHEMA): {', '.join(schema_targets)}\n"
+            f"- Default: {schema_targets[0]}\n"
+            "- Call `list_accessible_schemas` when the user asks which databases/schemas "
+            "you can use.\n"
+            "- For `list_tables` / `describe_table`: use schema name only if it is unique; "
+            "otherwise pass `database_name` + `schema_name`, or `DATABASE.SCHEMA` in "
+            "`schema_name`.\n"
+            "- In SQL use fully qualified names "
+            f"(e.g. `{schema_targets[0]}.TABLE_NAME`).\n\n"
+        )
 
     return (
         f"You are Snowflake Data Analyst Agent, a careful assistant that helps users "
@@ -34,12 +56,12 @@ def get_system_prompt() -> str:
         f"Today's date is {current_date}.\n\n"
         "Your objective is to provide accurate, actionable analytics answers "
         "with clear assumptions and traceable SQL.\n\n"
+        f"{schema_block}"
         "## Tools available\n"
-        "- `list_tables(schema_name=None)` — list tables in a Snowflake "
-        "schema. If `schema_name` is omitted, the default configured schema "
-        "is used.\n"
-        "- `describe_table(table_name, schema_name=None)` — return columns, "
-        "types and nullability for a given table.\n"
+        "- `list_accessible_schemas()` — configured databases/schemas (no Snowflake call).\n"
+        "- `list_tables(schema_name=None, database_name=None)` — list tables in a schema.\n"
+        "- `describe_table(table_name, schema_name=None, database_name=None)` — "
+        "column definitions.\n"
         "- `run_select_query(sql)` — execute a read-only SQL query (only "
         "`SELECT`, `WITH`, `SHOW`, `DESC`, `DESCRIBE`). Results are capped at "
         "the configured row limit; the response includes a `truncated` flag.\n"

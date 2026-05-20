@@ -48,8 +48,9 @@ def register_plot_artifact(
     file_path: Path,
     title: str,
     plot_type: str,
+    plot_id: str | None = None,
 ) -> PlotArtifact:
-    plot_id = uuid4().hex
+    plot_id = plot_id or uuid4().hex
     filename = file_path.name
     artifact = PlotArtifact(
         plot_id=plot_id,
@@ -72,7 +73,20 @@ def register_plot_artifact(
 
 
 def get_plot_artifact(plot_id: str) -> Optional[PlotArtifact]:
-    return _plot_store.get(plot_id)
+    artifact = _plot_store.get(plot_id)
+    if artifact is not None:
+        return artifact
+    # Fallback: PNG saved as {plot_id}.png (survives in-memory eviction on same pod).
+    path = get_plot_artifacts_dir() / f"{plot_id}.png"
+    if path.is_file():
+        return PlotArtifact(
+            plot_id=plot_id,
+            file_path=path,
+            filename=path.name,
+            title=path.stem,
+            plot_type="chart",
+        )
+    return None
 
 
 def get_session_plot_artifacts() -> List[PlotArtifact]:

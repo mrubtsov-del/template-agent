@@ -233,3 +233,81 @@ def test_tool_error_helper_shape():
         "retryable": False,
         "details": "details",
     }
+
+
+def test_qualify_accepts_database_dot_schema(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_SCHEMAS", None)
+    assert (
+        snowflake_tools._qualify("LEARNINGSOURCES_DB.INTERNAL_MARTS")
+        == "LEARNINGSOURCES_DB.INTERNAL_MARTS"
+    )
+
+
+def test_qualify_schema_name_only_uses_database(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_SCHEMAS", None)
+    assert snowflake_tools._qualify("INTERNAL_MARTS") == "LEARNINGSOURCES_DB.INTERNAL_MARTS"
+
+
+def test_qualify_allowed_schemas_list(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(
+        snowflake_tools.settings,
+        "SNOWFLAKE_ALLOWED_SCHEMAS",
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS,OTHER_DB.PUBLIC",
+    )
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_DATABASES", None)
+    assert snowflake_tools.settings.snowflake_allowed_schema_targets == [
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS",
+        "OTHER_DB.PUBLIC",
+    ]
+
+
+def test_allowed_databases_with_shared_schema(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_SCHEMAS", None)
+    monkeypatch.setattr(
+        snowflake_tools.settings,
+        "SNOWFLAKE_ALLOWED_DATABASES",
+        "LEARNINGSOURCES_DB,LEARNINGAGGREGATE_DB",
+    )
+    assert snowflake_tools.settings.snowflake_allowed_schema_targets == [
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS",
+        "LEARNINGAGGREGATE_DB.INTERNAL_MARTS",
+    ]
+    assert snowflake_tools.settings.snowflake_allowed_databases == [
+        "LEARNINGSOURCES_DB",
+        "LEARNINGAGGREGATE_DB",
+    ]
+
+
+def test_qualify_ambiguous_schema_requires_database(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_SCHEMAS", None)
+    monkeypatch.setattr(
+        snowflake_tools.settings,
+        "SNOWFLAKE_ALLOWED_DATABASES",
+        "DB_A,DB_B",
+    )
+    with pytest.raises(AppException) as exc:
+        snowflake_tools._qualify("INTERNAL_MARTS")
+    assert "multiple databases" in str(exc.value).lower()
+
+
+def test_list_accessible_schemas_tool(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(
+        snowflake_tools.settings,
+        "SNOWFLAKE_ALLOWED_SCHEMAS",
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS",
+    )
+    result = snowflake_tools.list_accessible_schemas.invoke({})
+    assert "LEARNINGSOURCES_DB.INTERNAL_MARTS" in result["schemas"]
+    assert "LEARNINGSOURCES_DB" in result["databases"]

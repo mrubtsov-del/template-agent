@@ -104,10 +104,16 @@ def _base_connect_kwargs() -> dict[str, Any]:
     }
     if settings.SNOWFLAKE_WAREHOUSE:
         kwargs["warehouse"] = settings.SNOWFLAKE_WAREHOUSE
-    if settings.SNOWFLAKE_DATABASE:
-        kwargs["database"] = settings.SNOWFLAKE_DATABASE
-    if settings.SNOWFLAKE_SCHEMA:
-        kwargs["schema"] = settings.SNOWFLAKE_SCHEMA
+    default_target = settings.snowflake_default_schema_target
+    if default_target and "." in default_target:
+        db, _, schema = default_target.partition(".")
+        kwargs["database"] = db
+        kwargs["schema"] = schema
+    else:
+        if settings.SNOWFLAKE_DATABASE:
+            kwargs["database"] = settings.SNOWFLAKE_DATABASE
+        if settings.SNOWFLAKE_SCHEMA:
+            kwargs["schema"] = settings.SNOWFLAKE_SCHEMA
     if settings.SNOWFLAKE_ROLE:
         kwargs["role"] = settings.SNOWFLAKE_ROLE
     return kwargs
@@ -264,34 +270,123 @@ def _snowflake_cursor() -> Iterator[DictCursor]:
         conn.close()
 
 
-def _qualify(schema_name: str | None) -> str:
+def _allowed_targets_label() -> str:
+    allowed = settings.snowflake_allowed_schema_targets
+    return ", ".join(allowed) if allowed else "(not configured)"
+
+
+def _qualify(
+    schema_name: str | None = None,
+    database_name: str | None = None,
+) -> str:
     """Return ``DATABASE.SCHEMA`` for SHOW/DESC statements.
 
-    Falls back to ``SNOWFLAKE_SCHEMA`` when ``schema_name`` is not provided.
+    Accepts:
+    - ``LEARNINGSOURCES_DB.INTERNAL_MARTS`` in ``schema_name`` → used as-is.
+    - ``database_name`` + ``schema_name`` → ``DB.SCHEMA``.
+    - ``schema_name`` only → resolved against allowed targets / defaults.
+    - neither → first allowed target or ``SNOWFLAKE_DATABASE`` + ``SNOWFLAKE_SCHEMA``.
+
     Raises if neither database nor schema can be determined.
     """
-    db = settings.SNOWFLAKE_DATABASE
-    sc = schema_name or settings.SNOWFLAKE_SCHEMA
-    if not db or not sc:
+    allowed = settings.snowflake_allowed_schema_targets
+    allowed_set = {a.upper() for a in allowed}
+
+    if schema_name and "." in schema_name.strip():
+        target = schema_name.strip()
+        if allowed_set and target.upper() not in allowed_set:
+            raise AppException(
+                f"Schema '{target}' is not allowed. Configured: {_allowed_targets_label()}",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+        return target
+
+    db = (database_name or "").strip() or None
+    sc = (schema_name or "").strip() or settings.SNOWFLAKE_SCHEMA
+
+    if db and sc:
+        target = f"{db}.{sc}"
+        if allowed_set and target.upper() not in allowed_set:
+            raise AppException(
+                f"Schema '{target}' is not allowed. Configured: {_allowed_targets_label()}",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+        return target
+
+    if sc and not db:
+        matches = [
+            target
+            for target in allowed
+            if target.split(".", 1)[-1].upper() == sc.upper()
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise AppException(
+                f"Schema name '{sc}' exists in multiple databases: {', '.join(matches)}. "
+                "Pass database_name or use DATABASE.SCHEMA.",
+                AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+            )
+
+    if not sc:
+        if allowed:
+            return allowed[0]
         raise AppException(
             "SNOWFLAKE_DATABASE and SNOWFLAKE_SCHEMA must be set",
             AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
         )
-    return f"{db}.{sc}"
+
+    db = db or settings.SNOWFLAKE_DATABASE
+    if not db:
+        if allowed and len(allowed) == 1:
+            return allowed[0]
+        raise AppException(
+            "database_name or SNOWFLAKE_DATABASE is required when multiple databases are configured",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+    target = f"{db}.{sc}"
+    if allowed_set and target.upper() not in allowed_set:
+        raise AppException(
+            f"Schema '{target}' is not allowed. Configured: {_allowed_targets_label()}",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+    return target
 
 
 @tool
-def list_tables(schema_name: str | None = None) -> dict[str, Any]:
+def list_accessible_schemas() -> dict[str, Any]:
+    """List Snowflake databases/schemas configured for this agent (no Snowflake call).
+
+    Returns:
+        Dict with ``databases``, ``schemas`` (``DATABASE.SCHEMA``), and ``default``.
+    """
+    targets = settings.snowflake_allowed_schema_targets
+    return {
+        "databases": settings.snowflake_allowed_databases,
+        "schemas": targets,
+        "default": targets[0] if targets else None,
+        "hint": (
+            "Use list_tables(schema_name=...) with schema name only when unambiguous, "
+            "or pass database_name + schema_name, or DATABASE.SCHEMA in schema_name."
+        ),
+    }
+
+
+@tool
+def list_tables(
+    schema_name: str | None = None,
+    database_name: str | None = None,
+) -> dict[str, Any]:
     """List tables available in a Snowflake schema.
 
     Args:
-        schema_name: Snowflake schema name. Defaults to the configured
-            ``SNOWFLAKE_SCHEMA`` if omitted.
+        schema_name: Schema name, or fully qualified ``DATABASE.SCHEMA``.
+        database_name: Database when schema_name is not qualified (optional if only one DB).
 
     Returns:
         Dict with the schema queried and a list of table names.
     """
-    target = _qualify(schema_name)
+    target = _qualify(schema_name, database_name)
     started_at = perf_counter()
     logger.info("snowflake.list_tables.start target=%s", target)
     try:
@@ -325,18 +420,23 @@ def list_tables(schema_name: str | None = None) -> dict[str, Any]:
 
 
 @tool
-def describe_table(table_name: str, schema_name: str | None = None) -> dict[str, Any]:
+def describe_table(
+    table_name: str,
+    schema_name: str | None = None,
+    database_name: str | None = None,
+) -> dict[str, Any]:
     """Return the column definitions for a Snowflake table.
 
     Args:
         table_name: Table to describe.
-        schema_name: Snowflake schema name. Defaults to ``SNOWFLAKE_SCHEMA``.
+        schema_name: Schema name, or fully qualified ``DATABASE.SCHEMA``.
+        database_name: Database when schema_name is not qualified.
 
     Returns:
         Dict with the fully qualified table name and a list of columns
         ``{name, type, nullable}``.
     """
-    target = _qualify(schema_name)
+    target = _qualify(schema_name, database_name)
     fqn = f"{target}.{table_name}"
     started_at = perf_counter()
     logger.info("snowflake.describe_table.start fqn=%s", fqn)
@@ -507,4 +607,9 @@ def run_select_query(sql: str) -> dict[str, Any]:
         )
 
 
-SNOWFLAKE_TOOLS = [list_tables, describe_table, run_select_query]
+SNOWFLAKE_TOOLS = [
+    list_accessible_schemas,
+    list_tables,
+    describe_table,
+    run_select_query,
+]

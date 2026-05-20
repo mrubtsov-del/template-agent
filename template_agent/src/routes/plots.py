@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 
 from template_agent.src.core.plot_artifacts import get_plot_artifact
 
-router = APIRouter(prefix="/v1/plots", tags=["plots"])
+router = APIRouter(prefix="/api/v1/plots", tags=["plots"])
 
 
 @router.get("/{plot_id}.png")

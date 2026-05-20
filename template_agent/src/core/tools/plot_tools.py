@@ -65,8 +65,9 @@ def _validate_columns(df: pd.DataFrame, *names: Optional[str]) -> Optional[str]:
 def _save_figure(fig: plt.Figure, *, title: str, plot_type: str) -> dict[str, Any]:
     from uuid import uuid4
 
+    plot_id = uuid4().hex
     out_dir = get_plot_artifacts_dir()
-    filename = f"chart_{plot_type}_{uuid4().hex[:10]}.png"
+    filename = f"{plot_id}.png"
     path = out_dir / filename
     fig.tight_layout()
     fig.savefig(path, dpi=300, bbox_inches="tight")
@@ -76,6 +77,7 @@ def _save_figure(fig: plt.Figure, *, title: str, plot_type: str) -> dict[str, An
         file_path=path,
         title=title,
         plot_type=plot_type,
+        plot_id=plot_id,
     )
     url = plot_public_url(artifact.plot_id)
     return {

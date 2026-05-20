@@ -166,6 +166,27 @@ class Settings(BaseSettings):
             "description": "Comma-separated list of allowed Snowflake tables for querying",
         },
     )
+    SNOWFLAKE_ALLOWED_DATABASES: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "SNOWFLAKE_ALLOWED_DATABASES",
+            "description": (
+                "Comma-separated Snowflake databases. Combined with "
+                "SNOWFLAKE_SCHEMA or schema-only SNOWFLAKE_ALLOWED_SCHEMAS entries."
+            ),
+        },
+    )
+    SNOWFLAKE_ALLOWED_SCHEMAS: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "SNOWFLAKE_ALLOWED_SCHEMAS",
+            "description": (
+                "Comma-separated schemas: SCHEMA names (paired with "
+                "SNOWFLAKE_ALLOWED_DATABASES or SNOWFLAKE_DATABASE) or "
+                "fully qualified DATABASE.SCHEMA"
+            ),
+        },
+    )
     SNOWFLAKE_QUERY_TIMEOUT: int = Field(
         default=60,
         json_schema_extra={
@@ -235,6 +256,78 @@ class Settings(BaseSettings):
     def snowflake_user_effective(self) -> Optional[str]:
         """Return Snowflake username with backward-compatible fallback order."""
         return self.SNOWFLAKE_USER_TEST or self.SNOWFLAKE_USER
+
+    @staticmethod
+    def _csv_env_list(value: Optional[str]) -> list[str]:
+        if not value:
+            return []
+        return [part.strip() for part in value.split(",") if part.strip()]
+
+    @property
+    def snowflake_allowed_schema_targets(self) -> list[str]:
+        """Normalized ``DATABASE.SCHEMA`` targets from env lists.
+
+        Resolution order:
+        1. ``DATABASE.SCHEMA`` entries in ``SNOWFLAKE_ALLOWED_SCHEMAS``.
+        2. Schema-only entries × each DB in ``SNOWFLAKE_ALLOWED_DATABASES``
+           (or ``SNOWFLAKE_DATABASE``).
+        3. Each DB in ``SNOWFLAKE_ALLOWED_DATABASES`` × ``SNOWFLAKE_SCHEMA``.
+        4. Fallback ``SNOWFLAKE_DATABASE`` + ``SNOWFLAKE_SCHEMA``.
+        """
+        schemas_raw = self._csv_env_list(self.SNOWFLAKE_ALLOWED_SCHEMAS)
+        databases_raw = self._csv_env_list(self.SNOWFLAKE_ALLOWED_DATABASES)
+
+        explicit = [entry for entry in schemas_raw if "." in entry]
+        schema_only = [entry for entry in schemas_raw if "." not in entry]
+
+        targets: list[str] = list(explicit)
+
+        if schema_only:
+            databases = databases_raw or (
+                [self.SNOWFLAKE_DATABASE] if self.SNOWFLAKE_DATABASE else []
+            )
+            for database in databases:
+                for schema in schema_only:
+                    targets.append(f"{database}.{schema}")
+        elif databases_raw and self.SNOWFLAKE_SCHEMA:
+            for database in databases_raw:
+                targets.append(f"{database}.{self.SNOWFLAKE_SCHEMA}")
+
+        if not targets and self.SNOWFLAKE_DATABASE and self.SNOWFLAKE_SCHEMA:
+            targets.append(f"{self.SNOWFLAKE_DATABASE}.{self.SNOWFLAKE_SCHEMA}")
+
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for target in targets:
+            key = target.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(target)
+        return ordered
+
+    @property
+    def snowflake_allowed_databases(self) -> list[str]:
+        """Unique database names from allowed schema targets and env lists."""
+        from_databases = self._csv_env_list(self.SNOWFLAKE_ALLOWED_DATABASES)
+        from_targets = [t.split(".", 1)[0] for t in self.snowflake_allowed_schema_targets if "." in t]
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for name in from_databases + from_targets + ([self.SNOWFLAKE_DATABASE] if self.SNOWFLAKE_DATABASE else []):
+            if not name:
+                continue
+            key = name.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(name)
+        return ordered
+
+    @property
+    def snowflake_default_schema_target(self) -> Optional[str]:
+        """First configured ``DATABASE.SCHEMA`` (session default)."""
+        targets = self.snowflake_allowed_schema_targets
+        return targets[0] if targets else None
 
     # Shadowbot JWT — team doc OAUTH_ISSUER / JWKS_URL map to AUTH_ISSUER / AUTH_JWKS_URL
     AUTH_ENABLED: bool = Field(

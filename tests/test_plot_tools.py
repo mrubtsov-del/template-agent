@@ -51,6 +51,31 @@ def test_create_chart_rejects_missing_column(monkeypatch, tmp_path):
     assert "error" in result
 
 
+def test_plot_png_route_served(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from template_agent.src.api import app
+    from template_agent.src.core.plot_artifacts import register_plot_artifact
+
+    monkeypatch.setattr(
+        "template_agent.src.core.plot_artifacts.settings.PLOT_ARTIFACT_DIR",
+        str(tmp_path),
+    )
+    path = tmp_path / "abc123.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    register_plot_artifact(
+        file_path=path,
+        title="Test chart",
+        plot_type="bar",
+        plot_id="abc123",
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/v1/plots/abc123.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+
+
 def test_plot_tools_gemini_compatible_schema():
     """Gemini rejects tool params with nested array items missing a type."""
     schema = plot_tools.create_chart_from_query.args_schema.model_json_schema()
