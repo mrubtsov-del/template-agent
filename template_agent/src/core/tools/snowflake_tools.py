@@ -275,6 +275,71 @@ def _allowed_targets_label() -> str:
     return ", ".join(allowed) if allowed else "(not configured)"
 
 
+def _split_schema_target(target: str) -> tuple[str, str]:
+    """Split ``DATABASE.SCHEMA``; raise if format is invalid."""
+    parts = target.split(".")
+    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+        raise AppException(
+            f"Invalid schema target '{target}'. Expected DATABASE.SCHEMA",
+            AppExceptionCode.CONFIGURATION_VALIDATION_ERROR,
+        )
+    return parts[0].strip(), parts[1].strip()
+
+
+def _fetch_tables_in_schema(target: str) -> tuple[list[str], Optional[str]]:
+    """Return table names in schema, or ``( [], error_message )`` on failure."""
+    try:
+        with _snowflake_cursor() as cur:
+            cur.execute(f"SHOW TABLES IN SCHEMA {target}")
+            rows = cur.fetchall()
+        names = [r.get("name") for r in rows if r.get("name")]
+        return names, None
+    except snowflake.connector.Error as exc:
+        return [], exc.msg or str(exc)
+
+
+def _probe_schema_target(target: str) -> dict[str, Any]:
+    """Check Snowflake access to a schema via ``SHOW TABLES IN SCHEMA``."""
+    started_at = perf_counter()
+    logger.info("snowflake.probe_schema.start target=%s", target)
+    try:
+        database, schema = _split_schema_target(target)
+    except AppException as exc:
+        return {
+            "target": target,
+            "accessible": False,
+            "error": str(exc),
+        }
+
+    names, error = _fetch_tables_in_schema(target)
+    duration_ms = round((perf_counter() - started_at) * 1000, 2)
+    if error:
+        logger.info(
+            "snowflake.probe_schema.done target=%s accessible=false duration_ms=%s",
+            target,
+            duration_ms,
+        )
+        return {
+            "target": target,
+            "accessible": False,
+            "error": error,
+        }
+
+    logger.info(
+        "snowflake.probe_schema.done target=%s accessible=true table_count=%s duration_ms=%s",
+        target,
+        len(names),
+        duration_ms,
+    )
+    return {
+        "target": target,
+        "database": database,
+        "schema": schema,
+        "accessible": True,
+        "table_count": len(names),
+    }
+
+
 def _qualify(
     schema_name: str | None = None,
     database_name: str | None = None,
@@ -355,19 +420,75 @@ def _qualify(
 
 @tool
 def list_accessible_schemas() -> dict[str, Any]:
-    """List Snowflake databases/schemas configured for this agent (no Snowflake call).
+    """List databases/schemas the agent can actually access in Snowflake.
+
+    Probes each entry from ``SNOWFLAKE_ALLOWED_SCHEMAS`` / env config with
+    ``SHOW TABLES IN SCHEMA``. Use this before telling the user which schemas exist.
 
     Returns:
-        Dict with ``databases``, ``schemas`` (``DATABASE.SCHEMA``), and ``default``.
+        ``configured`` (env), ``accessible`` (verified), ``inaccessible`` (failed probes),
+        ``databases`` (from accessible only), and ``default``.
     """
-    targets = settings.snowflake_allowed_schema_targets
+    configured = settings.snowflake_allowed_schema_targets
+    accessible: list[dict[str, Any]] = []
+    inaccessible: list[dict[str, Any]] = []
+
+    if not configured:
+        return {
+            "configured": [],
+            "accessible": [],
+            "inaccessible": [],
+            "databases": [],
+            "default": None,
+            "configuration_error": (
+                "No Snowflake schemas configured. Set SNOWFLAKE_DATABASE and "
+                "SNOWFLAKE_SCHEMA in the Secret, or SNOWFLAKE_ALLOWED_SCHEMAS "
+                "(not SNOWFLAKE_ALLOWED_SCHEMA) with DATABASE.SCHEMA entries."
+            ),
+            "hint": "Fix OpenShift Secret/ConfigMap and restart the Knative revision.",
+        }
+
+    for target in configured:
+        if "." not in target:
+            inaccessible.append(
+                {
+                    "target": target,
+                    "error": (
+                        "Invalid configuration format. Use DATABASE.SCHEMA "
+                        "(comma-separated), e.g. LEARNINGSOURCES_DB.INTERNAL_MARTS"
+                    ),
+                }
+            )
+            continue
+        probe = _probe_schema_target(target)
+        if probe.get("accessible"):
+            accessible.append(
+                {
+                    "target": probe["target"],
+                    "database": probe["database"],
+                    "schema": probe["schema"],
+                    "table_count": probe.get("table_count", 0),
+                }
+            )
+        else:
+            inaccessible.append(
+                {
+                    "target": probe["target"],
+                    "error": probe.get("error", "Access denied or schema does not exist"),
+                }
+            )
+
+    databases = sorted({entry["database"] for entry in accessible})
     return {
-        "databases": settings.snowflake_allowed_databases,
-        "schemas": targets,
-        "default": targets[0] if targets else None,
+        "configured": configured,
+        "accessible": accessible,
+        "inaccessible": inaccessible,
+        "databases": databases,
+        "default": accessible[0]["target"] if accessible else None,
         "hint": (
-            "Use list_tables(schema_name=...) with schema name only when unambiguous, "
-            "or pass database_name + schema_name, or DATABASE.SCHEMA in schema_name."
+            "Report ONLY entries in 'accessible' to the user. "
+            "'configured' is env intent, not proof of Snowflake privileges. "
+            "Call list_tables(schema_name='DATABASE.SCHEMA') for one schema's tables."
         ),
     }
 
@@ -389,34 +510,28 @@ def list_tables(
     target = _qualify(schema_name, database_name)
     started_at = perf_counter()
     logger.info("snowflake.list_tables.start target=%s", target)
-    try:
-        with _snowflake_cursor() as cur:
-            cur.execute(f"SHOW TABLES IN SCHEMA {target}")
-            rows = cur.fetchall()
-        names = [r.get("name") for r in rows if r.get("name")]
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
-        logger.info(
-            "snowflake.list_tables.done target=%s row_count=%s duration_ms=%s status=ok",
-            target,
-            len(names),
-            duration_ms,
-        )
-        return {"schema": target, "tables": names, "count": len(names)}
-    except snowflake.connector.Error as exc:
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
-        details = exc.msg or str(exc)
+    names, error = _fetch_tables_in_schema(target)
+    duration_ms = round((perf_counter() - started_at) * 1000, 2)
+    if error:
         logger.error(
             "snowflake.list_tables.done target=%s duration_ms=%s status=error details=%s",
             target,
             duration_ms,
-            details,
+            error,
         )
         return _tool_error(
-            message=f"Snowflake error: {details}",
+            message=f"Cannot access schema '{target}': {error}",
             error_type="snowflake_error",
             retryable=False,
-            details=details,
+            details=error,
         )
+    logger.info(
+        "snowflake.list_tables.done target=%s row_count=%s duration_ms=%s status=ok",
+        target,
+        len(names),
+        duration_ms,
+    )
+    return {"schema": target, "tables": names, "count": len(names)}
 
 
 @tool

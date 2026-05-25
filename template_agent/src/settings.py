@@ -187,6 +187,14 @@ class Settings(BaseSettings):
             ),
         },
     )
+    # Deprecated alias seen in some OpenShift secrets (singular key name).
+    SNOWFLAKE_ALLOWED_SCHEMA: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "SNOWFLAKE_ALLOWED_SCHEMA",
+            "description": "Deprecated: use SNOWFLAKE_ALLOWED_SCHEMAS instead.",
+        },
+    )
     SNOWFLAKE_QUERY_TIMEOUT: int = Field(
         default=60,
         json_schema_extra={
@@ -274,7 +282,8 @@ class Settings(BaseSettings):
         3. Each DB in ``SNOWFLAKE_ALLOWED_DATABASES`` × ``SNOWFLAKE_SCHEMA``.
         4. Fallback ``SNOWFLAKE_DATABASE`` + ``SNOWFLAKE_SCHEMA``.
         """
-        schemas_raw = self._csv_env_list(self.SNOWFLAKE_ALLOWED_SCHEMAS)
+        schemas_csv = self.SNOWFLAKE_ALLOWED_SCHEMAS or self.SNOWFLAKE_ALLOWED_SCHEMA
+        schemas_raw = self._csv_env_list(schemas_csv)
         databases_raw = self._csv_env_list(self.SNOWFLAKE_ALLOWED_DATABASES)
 
         explicit = [entry for entry in schemas_raw if "." in entry]

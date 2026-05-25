@@ -1,5 +1,7 @@
 """Tests for matplotlib plotting tools."""
 
+import json
+
 import pytest
 
 from template_agent.src.core.plot_artifacts import plot_request_scope
@@ -76,13 +78,78 @@ def test_plot_png_route_served(monkeypatch, tmp_path):
     assert response.headers["content-type"].startswith("image/png")
 
 
+def test_create_chart_from_query_accepts_json_string(monkeypatch, tmp_path):
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ENABLED", True)
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(plot_tools.settings, "AGENT_PUBLIC_BASE_URL", "https://agent.test")
+
+    payload = json.dumps(
+        {
+            "columns": ["user_id", "n"],
+            "rows": [[1, 10], [2, 20]],
+        }
+    )
+    result = plot_tools.create_chart_from_query.invoke(
+        {
+            "plot_type": "bar",
+            "query_result": payload,
+            "x_column": "user_id",
+            "y_column": "n",
+        }
+    )
+    assert result["status"] == "ok"
+
+
 def test_plot_tools_gemini_compatible_schema():
-    """Gemini rejects tool params with nested array items missing a type."""
-    schema = plot_tools.create_chart_from_query.args_schema.model_json_schema()
-    props = schema.get("properties", {})
-    assert "query_result" in props
-    assert props["query_result"].get("type") == "object"
-    assert "rows" not in props
+    """Gemini rejects nested list[list]; sql-based chart tool has no rows param."""
+    sql_schema = plot_tools.create_chart_from_sql.args_schema.model_json_schema()
+    assert "sql" in sql_schema.get("properties", {})
+    assert "rows" not in sql_schema.get("properties", {})
+
+    query_schema = plot_tools.create_chart_from_query.args_schema.model_json_schema()
+    assert "query_result" in query_schema.get("properties", {})
+    assert "rows" not in query_schema.get("properties", {})
+
+
+def test_chart_style_grid_and_color(monkeypatch, tmp_path):
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ENABLED", True)
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(plot_tools.settings, "AGENT_PUBLIC_BASE_URL", "https://agent.test")
+
+    result = plot_tools.create_chart_from_query.invoke(
+        {
+            "plot_type": "bar",
+            "query_result": {
+                "columns": ["category", "value"],
+                "rows": [["A", 10], ["B", 25]],
+            },
+            "x_column": "category",
+            "y_column": "value",
+            "show_grid": True,
+            "color": "#EE0000",
+            "rotate_x_labels": True,
+        }
+    )
+    assert result["status"] == "ok"
+    assert result["style"]["show_grid"] is True
+    assert result["style"]["color"] == "#EE0000"
+    assert result["style"]["rotate_x_labels"] is True
+
+
+def test_chart_style_rejects_invalid_color(monkeypatch, tmp_path):
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ENABLED", True)
+    monkeypatch.setattr(plot_tools.settings, "PLOT_ARTIFACT_DIR", str(tmp_path))
+
+    result = plot_tools.create_chart_from_query.invoke(
+        {
+            "plot_type": "bar",
+            "query_result": {"columns": ["x", "y"], "rows": [["a", 1]]},
+            "x_column": "x",
+            "y_column": "y",
+            "color": "red",
+        }
+    )
+    assert "error" in result
 
 
 def test_create_chart_from_query_result(monkeypatch, tmp_path):

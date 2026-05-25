@@ -300,14 +300,40 @@ def test_qualify_ambiguous_schema_requires_database(monkeypatch):
     assert "multiple databases" in str(exc.value).lower()
 
 
-def test_list_accessible_schemas_tool(monkeypatch):
+def test_allowed_schema_singular_alias(monkeypatch):
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_SCHEMAS", None)
+    monkeypatch.setattr(
+        snowflake_tools.settings,
+        "SNOWFLAKE_ALLOWED_SCHEMA",
+        "PUBLIC,INTERNAL_MARTS",
+    )
+    monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_ALLOWED_DATABASES", None)
+    assert snowflake_tools.settings.snowflake_allowed_schema_targets == [
+        "LEARNINGSOURCES_DB.PUBLIC",
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS",
+    ]
+
+
+def test_list_accessible_schemas_probes_snowflake(monkeypatch):
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_DATABASE", "LEARNINGSOURCES_DB")
     monkeypatch.setattr(snowflake_tools.settings, "SNOWFLAKE_SCHEMA", "INTERNAL_MARTS")
     monkeypatch.setattr(
         snowflake_tools.settings,
         "SNOWFLAKE_ALLOWED_SCHEMAS",
-        "LEARNINGSOURCES_DB.INTERNAL_MARTS",
+        "LEARNINGSOURCES_DB.INTERNAL_MARTS,LEARNINGAGGREGATE_DB.INTERNAL_MARTS",
     )
+
+    def fake_fetch(target: str):
+        if target == "LEARNINGSOURCES_DB.INTERNAL_MARTS":
+            return ["T1"], None
+        return [], "Object does not exist"
+
+    monkeypatch.setattr(snowflake_tools, "_fetch_tables_in_schema", fake_fetch)
     result = snowflake_tools.list_accessible_schemas.invoke({})
-    assert "LEARNINGSOURCES_DB.INTERNAL_MARTS" in result["schemas"]
-    assert "LEARNINGSOURCES_DB" in result["databases"]
+    assert len(result["accessible"]) == 1
+    assert result["accessible"][0]["target"] == "LEARNINGSOURCES_DB.INTERNAL_MARTS"
+    assert result["accessible"][0]["table_count"] == 1
+    assert len(result["inaccessible"]) == 1
+    assert result["databases"] == ["LEARNINGSOURCES_DB"]

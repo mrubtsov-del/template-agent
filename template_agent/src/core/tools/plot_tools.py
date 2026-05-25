@@ -6,6 +6,9 @@ Follows the data-viz-plots skill: publication-style defaults, tight layout,
 
 from __future__ import annotations
 
+import json
+import re
+from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 import matplotlib
@@ -31,15 +34,85 @@ PlotType = Literal["bar", "line", "scatter", "heatmap", "box", "violin", "histog
 
 _SUPPORTED = {"bar", "line", "scatter", "heatmap", "box", "violin", "histogram"}
 
+_PALETTES = frozenset(
+    {"viridis", "muted", "Set2", "husl", "deep", "pastel", "colorblind", "flare"}
+)
+_HEX_COLOR = re.compile(r"^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
 
-def _apply_plot_style() -> None:
-    sns.set_style("whitegrid")
+
+@dataclass(frozen=True)
+class ChartStyle:
+    """Small, safe chart styling options users may request in chat."""
+
+    show_grid: bool = False
+    palette: Optional[str] = None
+    color: Optional[str] = None
+    fig_width: float = 8.0
+    fig_height: float = 5.0
+    rotate_x_labels: bool = False
+
+
+def _parse_chart_style(
+    *,
+    show_grid: bool = False,
+    palette: Optional[str] = None,
+    color: Optional[str] = None,
+    fig_width: float = 8.0,
+    fig_height: float = 5.0,
+    rotate_x_labels: bool = False,
+) -> ChartStyle | dict[str, Any]:
+    if fig_width < 4 or fig_width > 16 or fig_height < 3 or fig_height > 12:
+        return _tool_error("fig_width must be 4–16 and fig_height must be 3–12")
+    normalized_palette: Optional[str] = None
+    if palette and str(palette).strip():
+        key = str(palette).strip()
+        if key not in _PALETTES:
+            return _tool_error(
+                f"palette must be one of: {', '.join(sorted(_PALETTES))}"
+            )
+        normalized_palette = key
+    normalized_color: Optional[str] = None
+    if color and str(color).strip():
+        candidate = str(color).strip()
+        if not _HEX_COLOR.match(candidate):
+            return _tool_error("color must be a hex code like #EE0000 or #c00")
+        normalized_color = candidate
+    return ChartStyle(
+        show_grid=show_grid,
+        palette=normalized_palette,
+        color=normalized_color,
+        fig_width=float(fig_width),
+        fig_height=float(fig_height),
+        rotate_x_labels=rotate_x_labels,
+    )
+
+
+def _apply_plot_style(style: ChartStyle) -> None:
+    sns.set_style("whitegrid" if style.show_grid else "white")
     plt.rcParams.update(
         {
             "figure.dpi": 150,
             "savefig.dpi": 300,
             "font.size": 10,
+            "axes.grid": style.show_grid,
         }
+    )
+
+
+def _normalize_query_result(raw: Any) -> dict[str, Any]:
+    """Accept dict or JSON string (Gemini sometimes passes tool output as string)."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            raise ValueError("query_result is empty")
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("query_result JSON must be an object with columns and rows")
+        return parsed
+    raise ValueError(
+        f"query_result must be a dict or JSON string, got {type(raw).__name__}"
     )
 
 
@@ -94,6 +167,17 @@ def _save_figure(fig: plt.Figure, *, title: str, plot_type: str) -> dict[str, An
     }
 
 
+def _style_dict(style: ChartStyle) -> dict[str, Any]:
+    return {
+        "show_grid": style.show_grid,
+        "palette": style.palette,
+        "color": style.color,
+        "fig_width": style.fig_width,
+        "fig_height": style.fig_height,
+        "rotate_x_labels": style.rotate_x_labels,
+    }
+
+
 def _render_chart(
     plot_type: str,
     df: pd.DataFrame,
@@ -104,8 +188,10 @@ def _render_chart(
     title: str,
     x_label: str,
     y_label: str,
+    style: ChartStyle | None = None,
 ) -> dict[str, Any]:
-    _apply_plot_style()
+    chart_style = style or ChartStyle()
+    _apply_plot_style(chart_style)
     plot_type = plot_type.lower().strip()
     if plot_type not in _SUPPORTED:
         return _tool_error(
@@ -120,16 +206,31 @@ def _render_chart(
     xlab = x_label or x_column
     ylab = y_label or (y_column or "")
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(chart_style.fig_width, chart_style.fig_height))
+    bar_color = chart_style.color if not hue_column else None
+    cmap = chart_style.palette or "viridis"
 
     try:
         if plot_type == "bar":
             if not y_column:
                 return _tool_error("bar plots require y_column")
             if hue_column:
-                sns.barplot(data=df, x=x_column, y=y_column, hue=hue_column, ax=ax)
+                sns.barplot(
+                    data=df,
+                    x=x_column,
+                    y=y_column,
+                    hue=hue_column,
+                    palette=chart_style.palette or "Set2",
+                    ax=ax,
+                )
             else:
-                sns.barplot(data=df, x=x_column, y=y_column, ax=ax)
+                sns.barplot(
+                    data=df,
+                    x=x_column,
+                    y=y_column,
+                    color=bar_color,
+                    ax=ax,
+                )
         elif plot_type == "line":
             if not y_column:
                 return _tool_error("line plots require y_column")
@@ -144,7 +245,13 @@ def _render_chart(
                     )
                 ax.legend(loc="best", frameon=True)
             else:
-                ax.plot(df[x_column], df[y_column], marker="o", linewidth=2)
+                ax.plot(
+                    df[x_column],
+                    df[y_column],
+                    marker="o",
+                    linewidth=2,
+                    color=bar_color,
+                )
         elif plot_type == "scatter":
             if not y_column:
                 return _tool_error("scatter plots require y_column")
@@ -154,12 +261,19 @@ def _render_chart(
                     x=x_column,
                     y=y_column,
                     hue=hue_column,
+                    palette=chart_style.palette or "deep",
                     s=40,
                     alpha=0.7,
                     ax=ax,
                 )
             else:
-                ax.scatter(df[x_column], df[y_column], s=40, alpha=0.7)
+                ax.scatter(
+                    df[x_column],
+                    df[y_column],
+                    s=40,
+                    alpha=0.7,
+                    color=bar_color,
+                )
         elif plot_type == "box":
             if not y_column:
                 return _tool_error("box plots require y_column")
@@ -168,10 +282,9 @@ def _render_chart(
                 x=x_column,
                 y=y_column,
                 hue=hue_column,
-                palette="Set2",
+                palette=chart_style.palette or "Set2",
                 ax=ax,
             )
-            ax.tick_params(axis="x", rotation=45)
         elif plot_type == "violin":
             if not y_column:
                 return _tool_error("violin plots require y_column")
@@ -180,14 +293,18 @@ def _render_chart(
                 x=x_column,
                 y=y_column,
                 hue=hue_column,
-                palette="muted",
+                palette=chart_style.palette or "muted",
                 inner="quartile",
                 ax=ax,
             )
-            ax.tick_params(axis="x", rotation=45)
         elif plot_type == "histogram":
             series = df[y_column or x_column]
-            ax.hist(series.dropna(), bins=min(30, max(10, len(series) // 5)), edgecolor="black")
+            ax.hist(
+                series.dropna(),
+                bins=min(30, max(10, len(series) // 5)),
+                edgecolor="black",
+                color=bar_color,
+            )
             xlab = xlab or (y_column or x_column)
             ylab = ylab or "Count"
         elif plot_type == "heatmap":
@@ -202,7 +319,12 @@ def _render_chart(
                         "heatmap requires numeric columns or y_column for pivot"
                     )
                 pivot = numeric
-            sns.heatmap(pivot, cmap="viridis", ax=ax, cbar_kws={"label": ylab or "Value"})
+            sns.heatmap(
+                pivot,
+                cmap=cmap,
+                ax=ax,
+                cbar_kws={"label": ylab or "Value"},
+            )
             xlab = ""
             ylab = ""
 
@@ -211,10 +333,15 @@ def _render_chart(
             ax.set_xlabel(xlab)
         if ylab:
             ax.set_ylabel(ylab)
+        if chart_style.rotate_x_labels:
+            ax.tick_params(axis="x", rotation=45)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-        return _save_figure(fig, title=display_title, plot_type=plot_type)
+        result = _save_figure(fig, title=display_title, plot_type=plot_type)
+        if result.get("status") == "ok":
+            result["style"] = _style_dict(chart_style)
+        return result
     except Exception as exc:
         plt.close(fig)
         logger.exception("plot.render failed type=%s", plot_type)
@@ -224,26 +351,49 @@ def _render_chart(
 @tool
 def create_chart_from_query(
     plot_type: PlotType,
-    query_result: dict[str, Any],
+    query_result: Any,
     x_column: str,
     y_column: Optional[str] = None,
     hue_column: Optional[str] = None,
     title: str = "",
     x_label: str = "",
     y_label: str = "",
+    show_grid: bool = False,
+    palette: Optional[str] = None,
+    color: Optional[str] = None,
+    fig_width: float = 8.0,
+    fig_height: float = 5.0,
+    rotate_x_labels: bool = False,
 ) -> dict[str, Any]:
-    """Create a chart directly from a ``run_select_query`` result dict.
+    """Create a chart from a ``run_select_query`` result (dict or JSON string).
 
     Args:
         plot_type: bar, line, scatter, heatmap, box, violin, or histogram.
-        query_result: Dict with ``columns`` and ``rows`` keys (Snowflake tool output).
+        query_result: Output of ``run_select_query`` — object with ``columns`` and
+            ``rows``, not a bare SQL string. JSON string is also accepted.
         x_column: X-axis column name.
-        y_column: Y-axis column name.
+        y_column: Y-axis column name (required for bar/line; use count column for aggregates).
         hue_column: Optional group/color column.
         title: Chart title.
         x_label: Optional x-axis label.
         y_label: Optional y-axis label.
+        show_grid: Show light background grid (default off).
+        palette: Seaborn/matplotlib palette for grouped plots or heatmaps
+            (viridis, muted, Set2, husl, deep, pastel, colorblind, flare).
+        color: Single-series hex color, e.g. #EE0000 (ignored when hue_column is set).
+        fig_width: Figure width in inches (4–16).
+        fig_height: Figure height in inches (3–12).
+        rotate_x_labels: Rotate x tick labels 45° for long category names.
     """
+    try:
+        query_result = _normalize_query_result(query_result)
+    except (ValueError, json.JSONDecodeError) as exc:
+        return _tool_error(
+            f"Invalid query_result: {exc}. Pass the full dict from run_select_query "
+            "(columns + rows), or call create_chart_from_sql with your SQL.",
+            error_type="validation_error",
+        )
+
     if query_result.get("error"):
         return _tool_error(
             f"Cannot plot failed query: {query_result.get('error')}",
@@ -261,6 +411,16 @@ def create_chart_from_query(
         return _tool_error(f"Invalid tabular data: {exc}")
     if df.empty:
         return _tool_error("No rows to plot")
+    parsed = _parse_chart_style(
+        show_grid=show_grid,
+        palette=palette,
+        color=color,
+        fig_width=fig_width,
+        fig_height=fig_height,
+        rotate_x_labels=rotate_x_labels,
+    )
+    if isinstance(parsed, dict):
+        return parsed
     return _render_chart(
         plot_type,
         df,
@@ -270,8 +430,71 @@ def create_chart_from_query(
         title=title,
         x_label=x_label,
         y_label=y_label,
+        style=parsed,
     )
 
 
-# Only expose create_chart_from_query: Gemini rejects nested list[list] tool schemas.
-PLOT_TOOLS = [create_chart_from_query]
+@tool
+def create_chart_from_sql(
+    plot_type: PlotType,
+    sql: str,
+    x_column: str,
+    y_column: Optional[str] = None,
+    hue_column: Optional[str] = None,
+    title: str = "",
+    x_label: str = "",
+    y_label: str = "",
+    show_grid: bool = False,
+    palette: Optional[str] = None,
+    color: Optional[str] = None,
+    fig_width: float = 8.0,
+    fig_height: float = 5.0,
+    rotate_x_labels: bool = False,
+) -> dict[str, Any]:
+    """Run read-only SQL and create a chart in one step (preferred for charts).
+
+    Use aggregated SQL for bar charts (e.g. COUNT by USER_ID), not raw high-cardinality IDs.
+
+    Args:
+        plot_type: bar, line, scatter, heatmap, box, violin, or histogram.
+        sql: Read-only SELECT/WITH executed via ``run_select_query``.
+        x_column: Column for x-axis.
+        y_column: Column for y-axis (e.g. ENROLMENT_COUNT).
+        hue_column: Optional grouping column.
+        title: Chart title.
+        x_label: Optional x-axis label.
+        y_label: Optional y-axis label.
+        show_grid: Show light background grid (default off).
+        palette: Palette name for grouped plots or heatmaps.
+        color: Hex color for single-series charts (e.g. #CC0000).
+        fig_width: Figure width in inches (4–16).
+        fig_height: Figure height in inches (3–12).
+        rotate_x_labels: Rotate x tick labels 45°.
+    """
+    from template_agent.src.core.tools.snowflake_tools import run_select_query
+
+    query_result = run_select_query.invoke({"sql": sql})
+    if isinstance(query_result, dict) and query_result.get("error"):
+        return query_result
+    return create_chart_from_query.invoke(
+        {
+            "plot_type": plot_type,
+            "query_result": query_result,
+            "x_column": x_column,
+            "y_column": y_column,
+            "hue_column": hue_column,
+            "title": title,
+            "x_label": x_label,
+            "y_label": y_label,
+            "show_grid": show_grid,
+            "palette": palette,
+            "color": color,
+            "fig_width": fig_width,
+            "fig_height": fig_height,
+            "rotate_x_labels": rotate_x_labels,
+        }
+    )
+
+
+# Gemini rejects nested list[list] in tool schemas; use sql or query_result object paths.
+PLOT_TOOLS = [create_chart_from_sql, create_chart_from_query]
