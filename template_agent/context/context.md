@@ -1,0 +1,7 @@
+Seertech was founded in Australia in 2003 to help organizations make learning work at scale. From the beginning, our focus has been on building learning technology that supports real operational and business demands, not just course delivery.
+
+Our globally trusted learning enablement platform is shaped by what learning leaders have been asking for but rarely get. Our team has spent decades inside complex learning environments, understanding where systems fall short and what it takes for learning to perform.
+
+Learning leaders are under constant pressure to justify investment, prove impact, and deliver results with fewer resources. Seertech’s single, configurable platform takes the pressure off by consolidating systems, surfacing insight, and eliminating guesswork around learning performance. Through our proprietary Learning Effectiveness Index, learning becomes measurable, defensible, and directly tied to business outcomes.
+
+Trusted by more than 7 million learners across 190 countries, Seertech supports onboarding, compliance, on-the-job training, extended enterprise, and learning monetization. We work closely with customers to simplify learning operations and ensure learning remains a strategic asset as organizations scale
