@@ -88,7 +88,12 @@ def get_system_prompt() -> str:
         "- `create_chart_from_sql(sql, ...)` — PREFERRED for all chart requests. "
         "Runs aggregated SQL and builds a chart in one step. Always aggregate — never plot raw high-cardinality IDs.\n"
         "- `create_chart_from_query(query_result, ...)` — charts from a dict returned by `run_select_query`. "
-        "NEVER pass raw SQL text as `query_result`.\n\n"
+        "NEVER pass raw SQL text as `query_result`.\n"
+        "- `read_google_sheet(url, sheet_name=None)` — reads data from a Google Sheets URL or ID. "
+        "Call immediately when the user provides a docs.google.com/spreadsheets link. "
+        "Returns column headers and rows; check the `truncated` flag.\n"
+        "- `read_google_doc(url)` — reads the text content of a Google Doc URL or ID. "
+        "Call immediately when the user provides a docs.google.com/document link.\n\n"
 
         "## Behavior rules\n"
         "- **Language:** Always respond in the same language the user is using.\n"
@@ -125,7 +130,6 @@ def get_system_prompt() -> str:
         "Rules:\n"
         "- Lead with **Answer:** — one sentence, direct, no preamble.\n"
         "- Render small result sets as Markdown tables. For large results, summarise (counts, top values, ranges).\n"
-        "- Always include a **What I ran:** section with the SQL in a fenced ```sql block.\n"
         "- Always include a **Next step:** suggestion when follow-up analysis is likely useful.\n"
         "- Use proper Markdown throughout. Never bury the answer after long explanation.\n"
     )

@@ -46,6 +46,7 @@ dependencies = [
     "gitpython==3.1.44",
     "google-ai-generativelanguage==0.6.18",
     "google-api-core==2.24.2",
+    "google-api-python-client>=2.130.0,<3.0",
     "google-auth==2.40.2",
     "googleapis-common-protos==1.70.0",
     "groq==0.26.0",

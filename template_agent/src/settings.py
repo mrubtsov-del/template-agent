@@ -230,6 +230,18 @@ class Settings(BaseSettings):
         },
     )
 
+    # Google Workspace tools (Sheets + Docs reader)
+    GOOGLE_TOOLS_ENABLED: bool = Field(
+        default=True,
+        json_schema_extra={
+            "env": "GOOGLE_TOOLS_ENABLED",
+            "description": (
+                "Enable Google Sheets/Docs reader tools. Requires "
+                "GOOGLE_APPLICATION_CREDENTIALS_CONTENT to be configured."
+            ),
+        },
+    )
+
     # Plotting (matplotlib + seaborn — data-viz-plots skill)
     PLOT_ENABLED: bool = Field(
         default=True,
