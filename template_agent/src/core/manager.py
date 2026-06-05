@@ -23,7 +23,6 @@ from langgraph.types import Command, Interrupt
 
 from template_agent.src.core.agent import get_template_agent
 from template_agent.src.core.plot_artifacts import plot_request_scope
-from template_agent.src.core.tools.snowflake_tools import snowflake_request_auth_scope
 from template_agent.src.core.agent_utils import (
     convert_message_content_to_string,
     langchain_to_chat_message,
@@ -87,63 +86,61 @@ class AgentManager:
         Yields:
             Simplified event dictionaries with 'type' and 'content' fields.
         """
-        # Bind per-request Snowflake auth (X-Authorization-Snowflake) for tool calls.
-        with snowflake_request_auth_scope(self._custom_auth, self._snowflake_login):
-            with plot_request_scope():
-                async with get_template_agent(
-                    self.redhat_sso_token, enable_checkpointing=True
-                ) as persistent_agent:
-                    try:
-                        kwargs, run_id, thread_id = await self._handle_input(
-                            request, persistent_agent
+        with plot_request_scope():
+            async with get_template_agent(
+                self.redhat_sso_token, enable_checkpointing=True
+            ) as persistent_agent:
+                try:
+                    kwargs, run_id, thread_id = await self._handle_input(
+                        request, persistent_agent
+                    )
+
+                    app_logger.info(
+                        f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
+                    )
+
+                    self._current_tool_call_id = None
+
+                    async for stream_event in persistent_agent.astream(
+                        **kwargs, stream_mode=["updates", "messages", "custom"]
+                    ):
+                        if not isinstance(stream_event, tuple):
+                            continue
+
+                        stream_mode, event = stream_event
+
+                        self._update_tool_call_tracking(stream_mode, event)
+
+                        effective_session_id = request.session_id or thread_id
+                        formatted_events = self._format_events(
+                            stream_mode,
+                            event,
+                            request.stream_tokens,
+                            run_id,
+                            thread_id,
+                            effective_session_id,
                         )
 
-                        app_logger.info(
-                            f"AgentManager streaming response for run_id: {run_id}, thread_id: {thread_id}"
-                        )
+                        for formatted_event in formatted_events:
+                            if formatted_event:
+                                yield formatted_event
 
-                        self._current_tool_call_id = None
+                    app_logger.info(
+                        f"Conversation completed and auto-saved for thread {thread_id}"
+                    )
 
-                        async for stream_event in persistent_agent.astream(
-                            **kwargs, stream_mode=["updates", "messages", "custom"]
-                        ):
-                            if not isinstance(stream_event, tuple):
-                                continue
-
-                            stream_mode, event = stream_event
-
-                            self._update_tool_call_tracking(stream_mode, event)
-
-                            effective_session_id = request.session_id or thread_id
-                            formatted_events = self._format_events(
-                                stream_mode,
-                                event,
-                                request.stream_tokens,
-                                run_id,
-                                thread_id,
-                                effective_session_id,
-                            )
-
-                            for formatted_event in formatted_events:
-                                if formatted_event:
-                                    yield formatted_event
-
-                        app_logger.info(
-                            f"Conversation completed and auto-saved for thread {thread_id}"
-                        )
-
-                    except Exception as e:
-                        app_logger.error(
-                            f"Error in AgentManager stream_response: {e}", exc_info=True
-                        )
-                        yield {
-                            "type": "error",
-                            "content": {
-                                "message": "Internal server error",
-                                "recoverable": False,
-                                "error_type": "agent_error",
-                            },
-                        }
+                except Exception as e:
+                    app_logger.error(
+                        f"Error in AgentManager stream_response: {e}", exc_info=True
+                    )
+                    yield {
+                        "type": "error",
+                        "content": {
+                            "message": "Internal server error",
+                            "recoverable": False,
+                            "error_type": "agent_error",
+                        },
+                    }
 
     async def _handle_input(
         self, request: StreamRequest, agent: Pregel

@@ -471,30 +471,13 @@ def create_chart_from_sql(
         fig_height: Figure height in inches (3–12).
         rotate_x_labels: Rotate x tick labels 45°.
     """
-    from template_agent.src.core.tools.snowflake_tools import run_select_query
-
-    query_result = run_select_query.invoke({"sql": sql})
-    if isinstance(query_result, dict) and query_result.get("error"):
-        return query_result
-    return create_chart_from_query.invoke(
-        {
-            "plot_type": plot_type,
-            "query_result": query_result,
-            "x_column": x_column,
-            "y_column": y_column,
-            "hue_column": hue_column,
-            "title": title,
-            "x_label": x_label,
-            "y_label": y_label,
-            "show_grid": show_grid,
-            "palette": palette,
-            "color": color,
-            "fig_width": fig_width,
-            "fig_height": fig_height,
-            "rotate_x_labels": rotate_x_labels,
-        }
-    )
+    return {
+        "error": "create_chart_from_sql is not available when using Snowflake MCP. "
+        "Use execute_sql_query first, then pass the result to create_chart_from_query.",
+        "error_type": "not_available",
+    }
 
 
-# Gemini rejects nested list[list] in tool schemas; use sql or query_result object paths.
-PLOT_TOOLS = [create_chart_from_sql, create_chart_from_query]
+# create_chart_from_sql is disabled — Snowflake queries now go through MCP.
+# LLM should call execute_sql_query (Snowflake MCP) then create_chart_from_query.
+PLOT_TOOLS = [create_chart_from_query]

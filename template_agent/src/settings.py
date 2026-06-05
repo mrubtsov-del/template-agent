@@ -127,6 +127,23 @@ class Settings(BaseSettings):
             "description": "Enable SSL certificate verification for MCP connections",
         },
     )
+    MCP_API_KEY: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "env": "MCP_API_KEY",
+            "description": "Static API key for MCP server auth (e.g. Atlan). Used when sso_token is not available.",
+        },
+    )
+
+    # Atlan MCP Server (data catalog — second MCP server)
+    ATLAN_MCP_URL: Optional[str] = Field(
+        default=None,
+        json_schema_extra={"env": "ATLAN_MCP_URL"},
+    )
+    ATLAN_MCP_API_KEY: Optional[str] = Field(
+        default=None,
+        json_schema_extra={"env": "ATLAN_MCP_API_KEY"},
+    )
 
     # Snowflake Configuration
     SNOWFLAKE_ACCOUNT: Optional[str] = Field(
